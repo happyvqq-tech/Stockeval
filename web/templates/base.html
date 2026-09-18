@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}stockcore{% endblock %}</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/htmx.org@1.9.12/dist/htmx.min.js"></script>
+<style>body { font-family: -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif; }</style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen flex flex-col">
+<nav class="bg-slate-900 text-slate-100 px-4 py-3 flex gap-4 text-sm items-center">
+  <a href="/" class="font-semibold">stockcore</a>
+  <a href="/" class="hover:text-emerald-400">推薦排序</a>
+  <a href="/check" class="hover:text-emerald-400">個股檢查</a>
+  <a href="/universe" class="hover:text-emerald-400">股票池管理</a>
+  <span class="ml-auto text-xs text-slate-400">僅本機自用</span>
+</nav>
+<main class="flex-1 p-4 max-w-5xl w-full mx-auto">
+{% block content %}{% endblock %}
+</main>
+<footer class="text-xs text-slate-500 text-center py-4 border-t mt-8">
+  本工具僅為技術指標計算結果，不構成投資建議；評分權重尚未經回測驗證，使用者自負盈虧。
+</footer>
+</body>
+</html>

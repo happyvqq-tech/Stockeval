@@ -15,9 +15,15 @@ def available() -> list[str]:
     return sorted(p.stem for p in _DIR.glob("*.txt"))
 
 
+def path(market: str) -> Path:
+    """股票池檔案的路徑。寫入（例如網站的編輯頁）也走這個函式，
+    避免路徑規則在別處被複製一份而分岔。"""
+    return _DIR / f"{market.upper()}.txt"
+
+
 def load(market: str) -> list[tuple[str, str]]:
     """回傳 [(代號, 名稱), ...]。"""
-    p = _DIR / f"{market.upper()}.txt"
+    p = path(market)
     if not p.exists():
         raise FileNotFoundError(
             f"找不到 {market} 的股票池：{p}\n"

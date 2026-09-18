@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}股票池管理 - stockcore{% endblock %}
+{% block content %}
+<h1 class="text-xl font-bold mb-4">股票池管理</h1>
+
+<div class="flex gap-2 mb-4">
+  {% for m in markets %}
+  <a href="/universe?market={{ m }}"
+     class="px-3 py-1 rounded text-sm border {% if m == market %}bg-slate-900 text-white border-slate-900{% else %}bg-white{% endif %}">{{ m }}</a>
+  {% endfor %}
+</div>
+
+{% if error %}
+<div class="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm mb-4">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="/universe/add" class="bg-white border rounded-lg p-4 mb-4 flex gap-3 items-end flex-wrap">
+  <input type="hidden" name="market" value="{{ market }}">
+  <label class="text-sm">代號
+    <input name="code" required class="block border rounded px-2 py-1.5 mt-1">
+  </label>
+  <label class="text-sm">名稱
+    <input name="name" class="block border rounded px-2 py-1.5 mt-1">
+  </label>
+  <button class="bg-slate-900 text-white px-3 py-1.5 rounded text-sm">新增</button>
+</form>
+
+<div class="bg-white border rounded-lg divide-y divide-slate-100">
+  {% for code, name in rows %}
+  <div class="flex justify-between items-center px-4 py-2 text-sm">
+    <span><span class="font-mono">{{ code }}</span>　{{ name }}</span>
+    <form method="post" action="/universe/remove" onsubmit="return confirm('確定移除 {{ code }}？')">
+      <input type="hidden" name="market" value="{{ market }}">
+      <input type="hidden" name="code" value="{{ code }}">
+      <button class="text-red-600 text-xs hover:underline">移除</button>
+    </form>
+  </div>
+  {% else %}
+  <div class="px-4 py-3 text-sm text-slate-500">股票池是空的。</div>
+  {% endfor %}
+</div>
+<div class="text-xs text-slate-500 mt-2">共 {{ rows|length }} 檔。檔案：config/universe/{{ market }}.txt（每次修改前自動備份成 .bak）</div>
+{% endblock %}

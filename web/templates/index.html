@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}推薦排序 - stockcore{% endblock %}
+{% block content %}
+<h1 class="text-xl font-bold mb-4">推薦排序</h1>
+
+<form hx-post="/api/scan" hx-target="#scan-result" hx-swap="innerHTML"
+      class="bg-white rounded-lg border p-4 mb-4 grid gap-3 sm:grid-cols-4">
+  <label class="block text-sm">市場
+    <select name="market" class="mt-1 w-full border rounded px-2 py-1.5">
+      {% for m in markets %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="block text-sm sm:col-span-2">代號（留空＝掃整個股票池）
+    <input name="symbols" placeholder="2330,2317,2454" class="mt-1 w-full border rounded px-2 py-1.5">
+  </label>
+  <label class="block text-sm">最低分數
+    <input name="min_score" type="number" value="0" class="mt-1 w-full border rounded px-2 py-1.5">
+  </label>
+  <div class="sm:col-span-4">
+    <button type="submit" class="bg-slate-900 text-white px-4 py-2 rounded text-sm">開始掃描</button>
+    <span class="text-xs text-slate-500 ml-2">掃整個股票池可能要 30 秒以上，有速率限制不能加速</span>
+  </div>
+</form>
+
+<div id="scan-result"></div>
+{% endblock %}

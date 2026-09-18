@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}個股檢查 - stockcore{% endblock %}
+{% block content %}
+<h1 class="text-xl font-bold mb-4">個股檢查</h1>
+
+<form method="post" action="/check" class="bg-white rounded-lg border p-4 mb-4 grid gap-3 sm:grid-cols-4">
+  <label class="block text-sm">市場
+    <select name="market" class="mt-1 w-full border rounded px-2 py-1.5">
+      {% for m in markets %}<option value="{{ m }}" {% if m == market %}selected{% endif %}>{{ m }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="block text-sm">代號
+    <input name="symbol" value="{{ symbol or '' }}" required class="mt-1 w-full border rounded px-2 py-1.5">
+  </label>
+  <label class="block text-sm">未實現損益 %（無部位填 0）
+    <input name="unrealized" type="number" step="0.1" value="{{ unrealized or 0 }}"
+           class="mt-1 w-full border rounded px-2 py-1.5">
+  </label>
+  <div class="flex items-end">
+    <button type="submit" class="bg-slate-900 text-white px-4 py-2 rounded text-sm w-full">查詢</button>
+  </div>
+</form>
+
+{% if error %}
+<div class="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 text-sm mb-4">{{ error }}</div>
+{% endif %}
+
+{% if result %}
+<div class="text-xs text-slate-500 mb-2">
+  as_of <span class="font-medium text-slate-700">{{ result.as_of }}</span>
+  　{{ result.market }}:{{ result.symbol }}
+  {% if not result.adjusted %}　<span class="text-amber-700 font-medium">⚠ 資料未還原權息</span>{% endif %}
+</div>
+
+<div class="grid gap-4 md:grid-cols-2">
+  <div class="bg-white border rounded-lg p-4">
+    <h2 class="font-semibold mb-2 text-sm text-slate-500">出場判定（已有部位）</h2>
+    <div class="text-2xl font-bold mb-1
+      {%- if result.action == 'EXIT_ALL' %} text-red-600
+      {%- elif result.action in ['REDUCE_50', 'REDUCE_25', 'WATCH'] %} text-amber-600
+      {%- else %} text-emerald-600{% endif %}">{{ result.action_label }}</div>
+    <div class="text-xs text-slate-500 mb-3">
+      嚴重度 {{ result.severity_score }}　觸發 {{ result.triggered|join('、') or '無' }}
+    </div>
+    <div class="space-y-1.5 text-sm">
+      {% for r in result.rules %}
+      <div class="flex gap-2 {% if r.triggered %}text-red-700 font-medium{% else %}text-slate-400{% endif %}">
+        <span>{{ "●" if r.triggered else "○" }}</span>
+        <span class="w-12 shrink-0 font-mono text-xs pt-0.5">{{ r.code }}</span>
+        <span class="text-xs">{{ r.detail }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="bg-white border rounded-lg p-4">
+    <h2 class="font-semibold mb-2 text-sm text-slate-500">進場評分（尚無部位）</h2>
+    <div class="text-2xl font-bold mb-1">{{ result.recommendation.score }} 分
+      <span class="text-base font-normal text-slate-500">{{ result.recommendation.rating_label }}</span>
+    </div>
+    <div class="text-xs text-slate-500 mb-3">
+      進場 {{ result.recommendation.entry }}　停損 {{ result.recommendation.stop }}
+      　目標 {{ result.recommendation.target }}　風險 {{ result.recommendation.risk_pct }}%
+    </div>
+    <div class="space-y-1 text-xs text-slate-600">
+      {% for b in result.recommendation.breakdown %}
+      <div class="flex justify-between border-b border-slate-100 py-1 last:border-0">
+        <span class="w-16 shrink-0">{{ b.factor }}</span>
+        <span class="w-14 shrink-0 text-right">{{ b.points }}/{{ b.weight }}</span>
+        <span class="text-slate-400 ml-2">{{ b.detail }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{% if result.structural_notes %}
+<div class="bg-amber-50 border border-amber-300 rounded-lg p-4 mt-4 text-sm text-amber-800 space-y-1">
+  {% for n in result.structural_notes %}<div>⚠ {{ n }}</div>{% endfor %}
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

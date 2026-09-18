@@ -10,4 +10,10 @@ akshare>=1.14       # A 股
 # 開發
 pytest>=8.0
 
+# 網站版（可選；只想用 CLI 可以不裝）
+fastapi>=0.110
+uvicorn[standard]>=0.29
+jinja2>=3.1
+python-multipart>=0.0.9
+
 # 快取用 CSV，不需要 pyarrow。

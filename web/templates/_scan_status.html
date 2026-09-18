@@ -1,0 +1,88 @@
+{% if job.status == "running" %}
+<div hx-get="/api/scan/{{ job.id }}" hx-trigger="load delay:1s" hx-swap="outerHTML"
+     class="bg-white border rounded-lg p-4">
+  <div class="text-sm text-slate-600 mb-2">掃描中　{{ job.done }}/{{ job.total }}</div>
+  <div class="w-full bg-slate-200 rounded h-2">
+    <div class="bg-emerald-500 h-2 rounded transition-all"
+         style="width: {{ (job.done / job.total * 100) if job.total else 0 }}%"></div>
+  </div>
+</div>
+
+{% elif job.status == "error" %}
+<div class="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 text-sm">
+  掃描失敗：{{ job.error }}
+</div>
+
+{% else %}
+<div class="bg-white border rounded-lg p-4">
+  <div class="text-sm text-slate-600 mb-3">
+    as_of <span class="font-medium">{{ job.as_of or "—" }}</span>
+    　成功 {{ job.ranked|length }}/{{ job.total }}
+  </div>
+
+  {% if job.any_unadjusted %}
+  <div class="bg-amber-50 border border-amber-300 text-amber-800 text-sm rounded p-3 mb-3">
+    ⚠ 這批資料裡有標的未還原權息：除權息跳空會被誤判為破位，本次結果不可信（鐵則 4）。
+  </div>
+  {% endif %}
+
+  {% if not job.ranked %}
+  <div class="text-sm text-slate-500">沒有標的通過篩選條件或全部取得失敗。</div>
+  {% else %}
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="text-left border-b border-slate-200 text-slate-500">
+        <th class="py-1.5 pr-2 font-medium">代號</th>
+        <th class="py-1.5 pr-2 font-medium">名稱</th>
+        <th class="py-1.5 pr-2 font-medium text-right">分數</th>
+        <th class="py-1.5 pr-2 font-medium">評級</th>
+        <th class="py-1.5 pr-2 font-medium text-right">現價</th>
+        <th class="py-1.5 pr-2 font-medium text-right">停損</th>
+        <th class="py-1.5 pr-2 font-medium text-right">目標</th>
+        <th class="py-1.5 pr-2 font-medium text-right">風險%</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for x in job.ranked %}
+      <tr class="border-b border-slate-100 cursor-pointer hover:bg-slate-50"
+          onclick="this.nextElementSibling.classList.toggle('hidden')">
+        <td class="py-1.5 pr-2 font-mono">{{ x.symbol }}</td>
+        <td class="py-1.5 pr-2">{{ names.get(x.symbol, "") }}</td>
+        <td class="py-1.5 pr-2 text-right font-semibold
+          {%- if x.score >= 75 %} text-emerald-700
+          {%- elif x.score >= 60 %} text-emerald-600
+          {%- elif x.score >= 45 %} text-slate-600
+          {%- elif x.score >= 30 %} text-amber-600
+          {%- else %} text-red-600{% endif %}">{{ x.score }}</td>
+        <td class="py-1.5 pr-2">{{ x.rating_label }}</td>
+        <td class="py-1.5 pr-2 text-right">{{ "%.2f"|format(x.entry) }}</td>
+        <td class="py-1.5 pr-2 text-right">{{ "%.2f"|format(x.stop) }}</td>
+        <td class="py-1.5 pr-2 text-right">{{ "%.2f"|format(x.target) }}</td>
+        <td class="py-1.5 pr-2 text-right">{{ x.risk_pct }}%</td>
+      </tr>
+      <tr class="hidden bg-slate-50">
+        <td colspan="8" class="p-3 text-xs">
+          {% for b in x.breakdown %}
+          <div class="flex justify-between border-b border-slate-200 py-1 last:border-0">
+            <span class="w-20 shrink-0">{{ b.factor }}</span>
+            <span class="w-16 shrink-0 text-right">{{ b.points }}/{{ b.weight }}</span>
+            <span class="text-slate-500 ml-2">{{ b.detail }}</span>
+          </div>
+          {% endfor %}
+          {% for n in x.notes %}<div class="text-amber-700 mt-1">⚠ {{ n }}</div>{% endfor %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if job.failed %}
+  <div class="mt-3 text-xs text-slate-500">
+    取得失敗 {{ job.failed|length }} 檔：
+    {% for f in job.failed[:10] %}{{ f.symbol }}（{{ f.error }}）{% if not loop.last %}、{% endif %}{% endfor %}
+    {% if job.failed|length > 10 %}…等{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
