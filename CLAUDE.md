@@ -17,8 +17,18 @@ core/rules.py  純布林判斷，不呼叫 LLM
 python run_demo.py  —— 不需網路，改動 core/ 後必跑
 
 ## 目前狀態
-已完成：三市場 adapter、指標、P6/P7/P8/P10/P11/P13/V6-2
-待做：backtest.py、基本面資料、部位層風控
+已完成：
+- data/base.py 統一 OHLCV 格式與 normalize（排序、去重、剔除停牌日）
+- 三市場 adapter：TW FinMind、US yfinance、CN AkShare
+- core/indicators.py 指標
+- core/rules.py 出場規則 P6/P7/P8/P10/P11/P13/V6-2/V6-2a
+  ＋嚴重度加總分級（全數停損 / 降至 50% / 降至 75% / 續抱）
+- core/recommend.py 進場評分（趨勢30/動能25/位階20/量能15/波動10）與排序
+- config/ markets.yaml（市場常數）＋ rules.yaml（規則門檻、評分權重）
+- cli.py：rec 推薦排序 / check 持倉檢查 / demo 煙霧測試
+- tests/ 30 passed，含 test_invariants.py 鐵則守門測試
+
+待做：backtest.py、基本面資料（P1–P5）、部位層風控、資料快取層
 
 ## 注意
 回測必須扣交易成本（台股 58.5bps / A股 10bps / 美股 0bps），
