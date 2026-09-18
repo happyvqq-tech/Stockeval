@@ -29,10 +29,15 @@ python run_demo.py  —— 不需網路，改動 core/ 後必跑
 - data/universe.py ＋ config/universe/*.txt 三市場股票池
 - cli.py：rec 推薦排序（可掃整池）/ check 持倉檢查 / doctor 環境診斷
   / cache 快取管理 / demo 煙霧測試
-- web/ 網站版（FastAPI + Jinja2 + HTMX，`python -m web`，僅綁 127.0.0.1）：
-  推薦排序（背景掃描＋進度輪詢）/ 個股檢查 / 股票池編輯。
-  web/logic.py、web/jobs.py 只組裝呼叫 core/ 與 data/，不重複計算
-- tests/ 71 passed，含 test_invariants.py 鐵則守門測試、test_web.py 網站層測試
+- web/ 網站版（FastAPI + Jinja2 + HTMX）：推薦排序（背景掃描＋進度輪詢）
+  / 個股檢查 / 股票池編輯。web/logic.py、web/jobs.py 只組裝呼叫 core/
+  與 data/，不重複計算
+- web/auth.py 存取控制，fail closed：沒設 STOCKCORE_PASSWORD 就整個回 503。
+  另有速率限制，擋在驗證之前。/healthz 是唯一免驗證端點
+- Dockerfile ＋ docs/DEPLOY.md 可部署到任何吃 Docker 的 PaaS。
+  python -m web 是本機模式（127.0.0.1 ＋ LOCAL_ONLY），不可用於對外部署
+- tests/ 91 passed，含 test_invariants.py 鐵則守門測試、test_web.py 網站層、
+  test_auth.py 存取控制測試
 
 待做：backtest.py、基本面資料（P1–P5）、部位層風控、交易日曆
 

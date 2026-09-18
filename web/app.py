@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import FastAPI, Form, Request
@@ -15,12 +16,25 @@ from fastapi.templating import Jinja2Templates
 from data import universe
 
 from . import jobs, logic, universe_edit
+from .auth import AuthMiddleware, RateLimitMiddleware
 
-templates = Jinja2Templates(directory="web/templates")
+# 用絕對路徑：部署時的工作目錄不一定是專案根目錄
+templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
 
 MARKETS = ["TW", "US", "CN"]
 
 app = FastAPI(title="stockcore")
+
+# 順序重要：後加的先執行。速率限制要擋在驗證之前，
+# 否則有人可以靠不斷送錯密碼來耗資源。
+app.add_middleware(AuthMiddleware)
+app.add_middleware(RateLimitMiddleware)
+
+
+@app.get("/healthz")
+def healthz():
+    """平台健康檢查用。不吐任何資料，所以免驗證。"""
+    return {"status": "ok"}
 
 
 def _names(market: str) -> dict[str, str]:

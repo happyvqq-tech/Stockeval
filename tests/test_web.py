@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from data.base import MarketAdapter
+from web import auth
 from web.app import app
 
 
@@ -70,7 +71,16 @@ def universe_dir(monkeypatch, tmp_path):
 
 
 @pytest.fixture
-def client(fake_adapter, universe_dir):
+def local_mode(monkeypatch):
+    """網站層測試跑在本機模式，存取控制本身另見 tests/test_auth.py。"""
+    monkeypatch.delenv("STOCKCORE_PASSWORD", raising=False)
+    monkeypatch.setenv("STOCKCORE_LOCAL_ONLY", "1")
+    monkeypatch.setenv("STOCKCORE_RATE_LIMIT", "10000")
+    auth.reset_rate_limit()
+
+
+@pytest.fixture
+def client(fake_adapter, universe_dir, local_mode):
     return TestClient(app)
 
 
@@ -135,7 +145,7 @@ def test_scan_min_score_filters_results(client):
     assert "沒有標的通過篩選條件" in html
 
 
-def test_scan_flags_unadjusted_data(monkeypatch, universe_dir):
+def test_scan_flags_unadjusted_data(monkeypatch, universe_dir, local_mode):
     fake = FakeAdapter(adjusted=False)
     monkeypatch.setattr("web.logic.get_adapter", lambda market, **kw: fake)
     client = TestClient(app)
@@ -209,3 +219,19 @@ def test_universe_add_empty_code_rejected(client, universe_dir):
                      follow_redirects=False)
     assert r.status_code == 303
     assert "error=" in r.headers["location"]
+
+
+def test_every_route_is_behind_access_control(universe_dir, monkeypatch):
+    """所有實際頁面都必須受保護 —— 只有 /healthz 可以例外。"""
+    monkeypatch.delenv("STOCKCORE_PASSWORD", raising=False)
+    monkeypatch.delenv("STOCKCORE_LOCAL_ONLY", raising=False)
+    auth.reset_rate_limit()
+    c = TestClient(app)
+
+    for path in ["/", "/check", "/universe"]:
+        assert c.get(path).status_code == 503, f"{path} 沒有被存取控制擋住"
+    assert c.post("/api/scan", data={"market": "TW", "symbols": "2330"}).status_code == 503
+    assert c.get("/api/scan/whatever").status_code == 503
+    assert c.post("/universe/add", data={"market": "TW", "code": "1", "name": "x"}).status_code == 503
+    assert c.post("/universe/remove", data={"market": "TW", "code": "1"}).status_code == 503
+    assert c.get("/healthz").status_code == 200

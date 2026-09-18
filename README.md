@@ -80,6 +80,20 @@ python -m web
 網站層（`web/`）只呼叫 `core/` 和 `data/` 既有的函式，不重複計算任何指標，
 `web/logic.py` 是所有路由共用的組裝邏輯。換 port：`STOCKCORE_WEB_PORT=8080 python -m web`。
 
+### 部署到公開網址
+
+`Dockerfile` 可直接丟給任何吃 Docker 的 PaaS。完整步驟見 **[docs/DEPLOY.md](docs/DEPLOY.md)**。
+
+存取控制是 fail closed：**沒設 `STOCKCORE_PASSWORD`（至少 8 字元）就整個服務
+回 503**，不會有「預設開放」的狀態。設了之後用 HTTP Basic 驗證，帳號不檢查、
+只比對密碼（用 `compare_digest` 避免計時攻擊）。另有每分鐘請求上限
+（`STOCKCORE_RATE_LIMIT`，預設 60），擋在驗證之前，所以狂送錯密碼也耗不掉資源。
+
+`/healthz` 是唯一免驗證的端點，供平台健康檢查用，只回 `{"status": "ok"}`。
+
+`python -m web` 是本機模式（綁 127.0.0.1、自動帶 `STOCKCORE_LOCAL_ONLY=1`），
+不要拿來對外部署。
+
 ## 程式介面
 
 ```python
@@ -119,7 +133,7 @@ LLM 不做任何計算、不做任何判斷，只把數字寫成人話。
 
 ## 已驗證行為
 
-`pytest tests/ -q` → 71 passed。以下每一條都有對應測試：
+`pytest tests/ -q` → 91 passed。以下每一條都有對應測試：
 
 - 美股 `p6_require_volume: true` → 量比不足時不觸發 P6（假跌破過濾）
   → `test_p6_filtered_in_us_by_volume`
@@ -151,7 +165,9 @@ LLM 不做任何計算、不做任何判斷，只把數字寫成人話。
 - `data/cn.py` 的 `chips()` 只是佔位，融資融券還沒接完
 - 美股籌碼面（short interest / Form 4）另建模組，不適合放日線流程
 - 尚未接交易日曆（`exchange_calendars`），跨市場對齊會有誤差
-- 網站版目前只跑本機（`127.0.0.1`），沒有登入驗證，不要對外開放埠口
+- 部署後容器檔案系統是暫時的：快取與 `/universe` 頁面的股票池修改會在
+  重新部署後消失，要保存得掛 volume
+- HTTP Basic 密碼是明文傳輸，只有在 HTTPS 底下才安全
 - 進場評分的權重是先驗設定，**尚未經過回測驗證**，別直接拿去下單
 - 股票池是靜態檔案，不會自動跟著成分股調整而更新
 - 快取以「請求區間 + 12 小時」判定新舊，沒有接交易日曆，
