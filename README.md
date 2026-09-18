@@ -82,7 +82,11 @@ python -m web
 
 ### 部署到公開網址
 
-`Dockerfile` 可直接丟給任何吃 Docker 的 PaaS。完整步驟見 **[docs/DEPLOY.md](docs/DEPLOY.md)**。
+`Dockerfile` 可直接丟給任何吃 Docker 的 PaaS（建議 Render，`render.yaml` 已備好）。
+完整步驟見 **[docs/DEPLOY.md](docs/DEPLOY.md)**。
+
+容器裝的是 `requirements-web.txt`，不含 `pytest` 與 `akshare`（A 股要用的話
+把該行取消註解）。
 
 存取控制是 fail closed：**沒設 `STOCKCORE_PASSWORD`（至少 8 字元）就整個服務
 回 503**，不會有「預設開放」的狀態。設了之後用 HTTP Basic 驗證，帳號不檢查、

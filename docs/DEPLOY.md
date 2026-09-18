@@ -14,10 +14,28 @@
 - **伺服器資源** —— 掃一次整池要跑 30 秒以上
 - **你的持倉資訊** —— 個股檢查頁會顯示你輸入的未實現損益
 
+## 選哪個平台
+
+**建議 Render。** 從 GitHub repo 部署最直接，偵測到 `Dockerfile` 就自動建置，
+免費方案不必綁信用卡，自動給 HTTPS（HTTP Basic 密碼是明文傳輸，沒有 HTTPS
+等於沒有保護），區域可選新加坡，是離台灣最近的免費區域。
+repo 裡的 `render.yaml` 可以讓你用 Blueprint 一次帶入設定。
+
+**次選 Zeabur。** 台灣團隊做的，介面和文件都是繁體中文，出問題找資料比較快，
+一樣支援 Dockerfile。免費額度比 Render 緊一些。
+
+**不建議當第一選擇**：Railway 好用但已經不是真的免費（試用額度用完要付費）；
+Fly.io 要綁卡而且要裝 CLI、寫 `fly.toml`，對這個需求太複雜；
+Google Cloud Run 免費額度其實很夠、台灣還有 asia-east1 區域，但要開 GCP 專案
+並啟用帳單，設定步驟多很多。
+
+> 各家免費方案的條款變動頻繁，實際額度、是否綁卡、休眠規則請以你開帳號當下
+> 的官方說明為準。上面的建議理由（Docker 原生、不綁卡、自動 HTTPS、區域近）
+> 才是挑選的重點。
+
 ## 需要準備
 
-1. 一個吃 Dockerfile 的 PaaS 帳號（Render / Railway / Fly.io / Zeabur / Koyeb
-   之類都可以，本專案的 `Dockerfile` 不綁任何平台）
+1. 一個吃 Dockerfile 的 PaaS 帳號（`Dockerfile` 不綁任何平台，換家也能用）
 2. 這個 repo 推上 GitHub
 3. 一組夠長的密碼（至少 8 字元，太短會被當成沒設）
 
@@ -27,6 +45,16 @@
 
 在平台上選「從 GitHub repo 部署」，指定這個 repo 與分支。平台偵測到
 `Dockerfile` 後會自動用它建置，不需要額外指定 build command 或 start command。
+
+Render 的話兩種方式都行：
+
+- **New > Blueprint**，指到這個 repo，會讀 `render.yaml` 帶入方案、區域、
+  健康檢查路徑，你只要填兩個密碼欄位
+- **New > Web Service**，手動選 Docker、Free 方案、Singapore 區域
+
+容器裝的是 `requirements-web.txt`（精簡版），不含 `pytest` 與 `akshare`，
+建置比較快、映像檔比較小。**要在部署版用 A 股**，把 `requirements-web.txt`
+裡 `akshare` 那行取消註解再重新部署。
 
 容器的啟動指令已經寫在 `Dockerfile` 裡：
 

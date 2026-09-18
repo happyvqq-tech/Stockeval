@@ -1,0 +1,15 @@
+# Render 藍圖：在 Render 選 "New > Blueprint" 指到這個 repo 即可。
+# 不用這個檔案、直接在網頁上點 "New > Web Service" 也完全可以。
+services:
+  - type: web
+    name: stockcore
+    runtime: docker          # 舊版藍圖用的是 env: docker
+    plan: free
+    region: singapore        # 離台灣最近的免費區域
+    healthCheckPath: /healthz
+    envVars:
+      # sync: false = 不寫進 repo，部署時在 Render 網頁上填
+      - key: STOCKCORE_PASSWORD
+        sync: false
+      - key: FINMIND_TOKEN
+        sync: false

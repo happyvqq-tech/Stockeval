@@ -1,0 +1,17 @@
+# 容器用的精簡相依（Dockerfile 讀這份，不是 requirements.txt）。
+# 拿掉 pytest（測試才要）與 akshare（很重，且只有 A 股用得到），
+# 免費方案的建置時間與映像檔大小差很多。
+
+pandas>=2.0
+pyyaml>=6.0
+
+fastapi>=0.110
+uvicorn[standard]>=0.29
+jinja2>=3.1
+python-multipart>=0.0.9
+
+requests>=2.31      # 台股 FinMind
+yfinance>=0.2.40    # 美股
+
+# 要在部署版用 A 股就把下面這行取消註解（會讓映像檔大上不少）
+# akshare>=1.14

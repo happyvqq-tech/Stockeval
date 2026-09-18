@@ -8,9 +8,11 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# 先裝相依再複製程式碼，改程式時不必重裝套件
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# 先裝相依再複製程式碼，改程式時不必重裝套件。
+# 用精簡版清單：不裝 pytest 與 akshare，免費方案的建置快很多。
+# 要在部署版用 A 股，去 requirements-web.txt 把 akshare 那行取消註解。
+COPY requirements-web.txt .
+RUN pip install --no-cache-dir -r requirements-web.txt
 
 COPY . .
 

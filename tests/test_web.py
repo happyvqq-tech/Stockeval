@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import time
+import zlib
 
 import numpy as np
 import pandas as pd
@@ -25,7 +26,9 @@ class FakeAdapter(MarketAdapter):
     def _fetch(self, symbol, start, end):
         if symbol in self.fail_symbols:
             return pd.DataFrame()               # 空表 → 上層判定筆數不足
-        rng = np.random.default_rng(abs(hash(symbol)) % 10_000)
+        # 用 crc32 而不是 hash()：Python 的字串 hash 每個行程都不同
+        # （PYTHONHASHSEED 隨機化），會讓測試資料每次跑都變、造成偶發失敗。
+        rng = np.random.default_rng(zlib.crc32(symbol.encode()))
         n = 120
         close = 100 * np.exp(np.cumsum(rng.normal(0.001, 0.012, n)))
         idx = pd.bdate_range(end=pd.Timestamp.today().normalize(), periods=n)
@@ -61,6 +64,17 @@ def fake_adapter(monkeypatch):
     fake = FakeAdapter(fail_symbols={"BAD"})
     monkeypatch.setattr("web.logic.get_adapter", lambda market, **kw: fake)
     return fake
+
+
+@pytest.fixture(autouse=True)
+def isolated_cache(monkeypatch, tmp_path):
+    """每個測試用獨立的快取目錄。
+
+    沒有這層隔離的話，測試會讀寫專案根目錄的真實 ./cache，
+    結果取決於上一次跑剩下什麼檔案 —— 測試會變成時好時壞。
+    """
+    monkeypatch.setenv("STOCKCORE_CACHE", str(tmp_path / "cache"))
+    monkeypatch.delenv("STOCKCORE_NO_CACHE", raising=False)
 
 
 @pytest.fixture
@@ -185,8 +199,9 @@ def test_check_page_shows_error_on_bad_symbol(client):
 
 
 def test_check_page_shows_structural_notes(client):
-    r = client.post("/check", data={"market": "TW", "symbol": "2330", "unrealized": "25"})
-    assert "來回成本" in r.text or "⚠" in r.text
+    """structural_notes 不准被折疊或省略 —— 那裡面是會讓人賠錢的資訊。"""
+    r = client.post("/check", data={"market": "CN", "symbol": "2330", "unrealized": "25"})
+    assert "T+1" in r.text          # A 股一定會帶出 T+1 提示，不依賴隨機資料
 
 
 # ---------- 股票池編輯 ----------
