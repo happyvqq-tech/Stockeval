@@ -11,6 +11,12 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from config import market_cfg, rules as rules_cfg
+
+# 均線/回看窗格（5/10/20/60）不是「門檻」而是指標的定義本身，
+# 改掉 ma20 就不叫 ma20 了，所以留在程式裡。
+# 真正可調的門檻（最少筆數、黑K跌幅）一律從 config 讀 —— 鐵則 2。
+
 
 def _r(x, nd=2):
     """安全四捨五入：NaN 一律轉成 None，送進 JSON 才不會壞掉。"""
@@ -25,8 +31,15 @@ def _r(x, nd=2):
 
 def compute(df: pd.DataFrame, *, symbol: str = "", market: str = "") -> dict:
     """計算單一標的的全部技術指標快照。"""
-    if len(df) < 60:
-        raise ValueError(f"[{market}:{symbol}] 資料不足 60 筆，拒絕計算")
+    try:
+        min_bars = market_cfg(market)["min_bars"]
+    except KeyError:
+        min_bars = 60                      # 市場未指定時的保底值
+    if len(df) < min_bars:
+        raise ValueError(f"[{market}:{symbol}] 資料不足 {min_bars} 筆，拒絕計算")
+
+    # 黑K跌破的跌幅門檻與 P6 共用同一個設定值，避免兩處各寫一份而失聯
+    black_k_drop = rules_cfg()["p6"]["drop_pct"]
 
     c, h, l, v = df["close"], df["high"], df["low"], df["volume"]
 
@@ -95,7 +108,7 @@ def compute(df: pd.DataFrame, *, symbol: str = "", market: str = "") -> dict:
         "days_below_ma20": days_below,
         "below_ma20": bool(today < ma20.iloc[i]),
         "black_k_break": bool(
-            today < ma20.iloc[i] and (today / prev_close - 1) * 100 < -2.0
+            today < ma20.iloc[i] and (today / prev_close - 1) * 100 < black_k_drop
         ),
 
         # 資金曲線 (V6-2 / V6-2a)

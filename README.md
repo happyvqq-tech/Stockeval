@@ -10,6 +10,8 @@ core/    完全不知道自己在處理哪個市場（沒有任何 if market == 
 config/  所有數值門檻，改參數不動程式
 ```
 
+專案鐵則見 `CLAUDE.md`，由 `tests/test_invariants.py` 自動把關。
+
 市場差異一律走 `config/markets.yaml`。新增一個市場＝加一段 YAML ＋寫一個 adapter，
 `core/` 不用動一行。
 
@@ -75,7 +77,7 @@ LLM 不做任何計算、不做任何判斷，只把數字寫成人話。
 
 ## 已驗證行為
 
-`pytest tests/ -q` → 22 passed。以下每一條都有對應測試：
+`pytest tests/ -q` → 30 passed。以下每一條都有對應測試：
 
 - 美股 `p6_require_volume: true` → 量比不足時不觸發 P6（假跌破過濾）
   → `test_p6_filtered_in_us_by_volume`
@@ -86,6 +88,10 @@ LLM 不做任何計算、不做任何判斷，只把數字寫成人話。
 - 20MA 盤整時黑K破位不算破位 → `test_flat_ma20_suppresses_p6`
 - 未還原權息、跌停鎖死 → 均在 `structural_notes` 明確標記
 - `normalize()` 排序、去重、剔除停牌日（volume == 0）
+
+`tests/test_invariants.py` 是 CLAUDE.md 五條鐵則的守門測試：用 AST 掃描
+`core/` 有無市場數值分支（鐵則 1），並實際改掉 config 門檻確認行為跟著變
+（鐵則 2）、確認每個輸出都帶 as_of（鐵則 5）。改動 `core/` 後這份必須綠。
 
 `run_demo.py`（seed=7，合成資料）的回撤為 **-21.35%**，觸發 P8 / P10 / V6-2，
 三市場同為「全數停損」—— 這組資料裡 P6 未觸發，所以看不出市場差異，

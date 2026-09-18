@@ -51,11 +51,43 @@ score:
   volume: 15                 # 量能配合
   position: 20               # 位階不過熱、回撤可控
   volatility: 10             # 波動率適中
+
+  unknown: 0.5               # 該因子資料不足時給的比例分
+
+  # 單趟成本（bps）超過此值時扣分，最多扣 penalty_max 分
+  cost_penalty_bps: 30
+  cost_penalty_per_bps: 10   # 每超出 10bps 扣 1 分
+  cost_penalty_max: 5.0
+
+  thresholds:
+    momentum:
+      above_ma20_credit: 0.5   # 站上 20MA 先拿一半
+      slope_full_pct: 2.0      # 20MA 5 日斜率達 2% 即拿滿另一半
+    volume:
+      up_vol_floor: 0.8        # 上漲量比低於此值不給分
+      up_vol_full: 2.0         # 上漲量比達此值滿分
+      dump_vol_ratio: 2.0      # 下跌爆量，量能分歸零
+      dry_vol_ratio: 1.2       # 縮量下跌的量比上限
+      dry_credit: 0.6          # 縮量下跌最多只能拿六成
+    position:
+      bias_ideal_lo: 0.0       # 乖離落在 0~8% 最理想
+      bias_ideal_hi: 8.0
+      bias_tolerance: 14.0     # 偏離理想帶多少才扣到零
+      drawdown_zero_pct: -25.0 # 回撤到此值位階分歸零
+    volatility:
+      too_low: 0.15            # 年化波動低於此值視為牛皮
+      low_credit: 0.6
+      band_hi: 0.45            # 0.15~0.45 為適合波段的區間
+      zero_at: 1.0             # 波動到此值分數歸零
+
+  entry:
+    stop_max_loss_pct: 8.0     # 停損取 20MA 與 -8% 兩者較低
+    reward_risk: 2.0           # 目標價的報酬風險比
+    risk_warn_pct: 10.0        # 停損距離超過此值就示警
+
   ratings:
     - {min: 75, rating: STRONG_BUY, label: 強烈推薦}
     - {min: 60, rating: BUY,        label: 推薦}
     - {min: 45, rating: NEUTRAL,    label: 中性觀望}
     - {min: 30, rating: REDUCE,     label: 偏空減碼}
     - {min: 0,  rating: AVOID,      label: 迴避}
-  # 單趟成本（bps）超過此值時，短線訊號的分數打折
-  cost_penalty_bps: 30
