@@ -19,26 +19,47 @@ config/  所有數值門檻，改參數不動程式
 
 ```bash
 pip install -r requirements.txt
-# 台股走 FinMind HTTP API，需設環境變數 FINMIND_TOKEN
+export FINMIND_TOKEN=你的token        # 只有台股需要；沒有的話會退回未還原股價
 ```
 
-## 用法
-
-不用網路的煙霧測試：
+## 快速上手
 
 ```bash
-python run_demo.py        # 或 python cli.py demo
+python cli.py doctor        # 先跑這個：檢查套件、金鑰、快取、股票池、連線
+python cli.py rec --market TW          # 掃整個股票池，依分數排序
+python cli.py check --market TW --symbol 2330 -u 25   # 我抱著且賺 25%，該賣嗎
 ```
 
-指令列：
+`doctor` 會逐項告訴你缺什麼、該裝什麼，不用自己猜。
+
+`rec` 不給 `--symbols` 就掃 `config/universe/<市場>.txt` 的股票池：
+
+```
+TW 推薦排序　as_of 2026-09-18　成功 6/6　快取命中 6
+代號     名稱            分數  評級            現價      停損      目標
+2454     聯發科          82.3  強烈推薦      156.03    143.55    180.99
+2317     鴻海            79.3  強烈推薦      133.09    122.44    154.39
+2330     台積電          58.8  中性觀望      267.57    246.16    310.39
+```
+
+加 `-v` 看每個因子的得分與理由，加 `--top 10`、`--min-score 60` 篩選。
+
+**股票池**在 `config/universe/TW.txt`（每行「代號 名稱」，`#` 為註解），
+附的是大型股參考清單，不是即時成分股，請自行增刪維護。
+
+**快取**存在 `./cache/<市場>/<代號>.csv`，預設 12 小時內不重抓 ——
+FinMind 免費層有速率限制，掃幾十檔沒有快取一定被擋。
 
 ```bash
-python cli.py rec   --market TW --symbols 2330,2317,2454 -v   # 進場推薦排序
-python cli.py check --market US --symbol AAPL -u 25           # 持倉出場檢查
-python cli.py check --market CN --symbol 600519 --json        # 原始 JSON（給 LLM）
+python cli.py cache              # 看目前快取了什麼
+python cli.py cache --clear      # 清掉
+python cli.py rec --market TW --no-cache    # 這次強制重抓
 ```
+環境變數：`STOCKCORE_CACHE` 改路徑、`STOCKCORE_NO_CACHE=1` 整個停用。
 
-程式介面：
+不用網路的煙霧測試：`python run_demo.py`
+
+## 程式介面
 
 ```python
 from data.base import get_adapter
@@ -77,7 +98,7 @@ LLM 不做任何計算、不做任何判斷，只把數字寫成人話。
 
 ## 已驗證行為
 
-`pytest tests/ -q` → 30 passed。以下每一條都有對應測試：
+`pytest tests/ -q` → 52 passed。以下每一條都有對應測試：
 
 - 美股 `p6_require_volume: true` → 量比不足時不觸發 P6（假跌破過濾）
   → `test_p6_filtered_in_us_by_volume`
@@ -109,5 +130,7 @@ LLM 不做任何計算、不做任何判斷，只把數字寫成人話。
 - `data/cn.py` 的 `chips()` 只是佔位，融資融券還沒接完
 - 美股籌碼面（short interest / Form 4）另建模組，不適合放日線流程
 - 尚未接交易日曆（`exchange_calendars`），跨市場對齊會有誤差
-- 沒有快取層，每次 `cli.py rec` 都會重打 API（FinMind 免費層有速率限制）
 - 進場評分的權重是先驗設定，**尚未經過回測驗證**，別直接拿去下單
+- 股票池是靜態檔案，不會自動跟著成分股調整而更新
+- 快取以「請求區間 + 12 小時」判定新舊，沒有接交易日曆，
+  遇到連假可能拿到前一個交易日的資料（`as_of` 會誠實反映）

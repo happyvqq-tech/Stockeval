@@ -25,10 +25,13 @@ python run_demo.py  —— 不需網路，改動 core/ 後必跑
   ＋嚴重度加總分級（全數停損 / 降至 50% / 降至 75% / 續抱）
 - core/recommend.py 進場評分（趨勢30/動能25/位階20/量能15/波動10）與排序
 - config/ markets.yaml（市場常數）＋ rules.yaml（規則門檻、評分權重）
-- cli.py：rec 推薦排序 / check 持倉檢查 / demo 煙霧測試
-- tests/ 30 passed，含 test_invariants.py 鐵則守門測試
+- data/cache.py 本地 CSV 快取（預設 12 小時，記錄請求區間避免假性失效）
+- data/universe.py ＋ config/universe/*.txt 三市場股票池
+- cli.py：rec 推薦排序（可掃整池）/ check 持倉檢查 / doctor 環境診斷
+  / cache 快取管理 / demo 煙霧測試
+- tests/ 52 passed，含 test_invariants.py 鐵則守門測試
 
-待做：backtest.py、基本面資料（P1–P5）、部位層風控、資料快取層
+待做：backtest.py、基本面資料（P1–P5）、部位層風控、交易日曆
 
 ## 注意
 回測必須扣交易成本（台股 58.5bps / A股 10bps / 美股 0bps），

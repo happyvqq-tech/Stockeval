@@ -1,0 +1,41 @@
+# 美股觀察池（大型股參考清單）。代號沿用 yfinance 寫法，例如 BRK-B 而非 BRK.B。
+AAPL Apple
+MSFT Microsoft
+NVDA NVIDIA
+GOOGL Alphabet
+AMZN Amazon
+META Meta
+AVGO Broadcom
+TSLA Tesla
+BRK-B Berkshire Hathaway
+LLY Eli Lilly
+JPM JPMorgan
+V Visa
+MA Mastercard
+XOM Exxon Mobil
+UNH UnitedHealth
+COST Costco
+HD Home Depot
+PG Procter & Gamble
+JNJ Johnson & Johnson
+ABBV AbbVie
+WMT Walmart
+NFLX Netflix
+CRM Salesforce
+BAC Bank of America
+AMD AMD
+KO Coca-Cola
+PEP PepsiCo
+TMO Thermo Fisher
+CSCO Cisco
+ADBE Adobe
+ACN Accenture
+MCD McDonald's
+LIN Linde
+ABT Abbott
+ORCL Oracle
+QCOM Qualcomm
+TXN Texas Instruments
+INTC Intel
+DIS Disney
+PM Philip Morris

@@ -23,7 +23,13 @@ class USAdapter(MarketAdapter):
     adjusted = True
 
     def _fetch(self, symbol: str, start: date, end: date) -> pd.DataFrame:
+        import logging
+
         import yfinance as yf
+
+        # yfinance 會把連線錯誤印成一大段雜訊蓋掉呼叫端的輸出，這裡壓掉；
+        # 真正的失敗由上層看「回傳幾筆」來判斷。
+        logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
         df = yf.download(
             symbol.strip().upper(),

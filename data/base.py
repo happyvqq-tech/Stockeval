@@ -18,6 +18,8 @@ from datetime import date, datetime
 
 import pandas as pd
 
+from . import cache
+
 COLUMNS = ["open", "high", "low", "close", "volume"]
 
 
@@ -66,10 +68,23 @@ class MarketAdapter(ABC):
     market: str = ""
     settlement: str = "T+0"
     adjusted: bool = True          # 是否已還原權息；False 時上層必須警告
+    from_cache: bool = False       # 上一次 ohlcv() 是否走快取
 
-    def ohlcv(self, symbol: str, start, end=None) -> pd.DataFrame:
-        raw = self._fetch(symbol, _as_date(start), _as_date(end))
-        return normalize(raw, market=self.market, symbol=symbol)
+    def ohlcv(self, symbol: str, start, end=None, *, use_cache: bool = True,
+              ttl_hours: float = cache.DEFAULT_TTL_HOURS) -> pd.DataFrame:
+        s, e = _as_date(start), _as_date(end)
+
+        if use_cache and cache.enabled():
+            hit = cache.usable(self.market, symbol, s, ttl_hours)
+            if hit is not None:
+                self.from_cache = True
+                return hit.loc[str(s):str(e)]
+
+        self.from_cache = False
+        df = normalize(self._fetch(symbol, s, e), market=self.market, symbol=symbol)
+        if use_cache and cache.enabled():
+            cache.save(self.market, symbol, df, requested_start=s)
+        return df
 
     @abstractmethod
     def _fetch(self, symbol: str, start: date, end: date) -> pd.DataFrame:
