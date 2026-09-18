@@ -1,0 +1,12 @@
+# 核心（必裝）
+pandas>=2.0
+pyyaml>=6.0
+
+# 資料來源（按需安裝）
+requests>=2.31      # 台股 FinMind
+yfinance>=0.2.40    # 美股
+akshare>=1.14       # A 股
+pyarrow>=15.0       # parquet 快取
+
+# 開發
+pytest>=8.0

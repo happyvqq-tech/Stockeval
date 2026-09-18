@@ -1,0 +1,34 @@
+# 市場常數 —— 只有這裡知道「哪個市場」，core/ 一律透過這份設定取值。
+# 改參數不動程式。
+
+TW:
+  name: 台股
+  currency: TWD
+  settlement: T+0            # 現股當沖可同日反向沖銷，止損可當日執行
+  # 手續費 0.1425% × 2（買+賣）+ 證交稅 0.3%（賣出）= 58.5 bps
+  cost_bps: 58.5
+  has_price_limit: true
+  limit_pct: 0.10
+  p6_require_volume: false   # 台股有漲跌停，跌破後常一路殺，不等量能確認
+  min_bars: 60
+
+US:
+  name: 美股
+  currency: USD
+  settlement: T+0            # 現金帳戶有 T+2 交割，但可當日賣出
+  cost_bps: 0                # 主流券商零佣金；ECN fee 與價差不在本模型內
+  has_price_limit: false
+  limit_pct: null
+  p6_require_volume: true    # 無漲跌停，假跌破多，必須要量能確認
+  min_bars: 60
+
+CN:
+  name: A股
+  currency: CNY
+  settlement: T+1            # 當日買進不可賣，止損實際執行日 +1
+  # 印花稅 0.05%（賣出）+ 佣金約 0.025% × 2 = 10 bps
+  cost_bps: 10
+  has_price_limit: true
+  limit_pct: 0.10            # 主板；創業板/科創板由 data/cn.py 的 limit_pct() 覆寫
+  p6_require_volume: false
+  min_bars: 60
