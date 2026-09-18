@@ -135,7 +135,8 @@ def evaluate(
     p13 = bias is not None and bias >= c["bias_pct"]
     results.append(
         _hit("P13", p13,
-             f"正乖離 {bias}% ≥ {c['bias_pct']}%，過熱",
+             f"正乖離 {bias}% ≥ {c['bias_pct']}%，過熱"
+             if p13 else f"乖離 {bias}%，未達過熱門檻 {c['bias_pct']}%",
              c["severity"])
     )
 

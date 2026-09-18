@@ -108,3 +108,12 @@ def test_is_limit_down():
 def test_compute_rejects_short_history():
     with pytest.raises(ValueError, match="60"):
         compute(series(list(range(100, 130))), symbol="T", market="TW")
+
+
+@pytest.mark.parametrize("market", ["TW", "US", "CN"])
+def test_untriggered_rules_do_not_claim_threshold_met(market):
+    """送給 LLM 的 detail 不能自相矛盾：沒觸發就不該寫「≥ 門檻」。"""
+    m = compute(p6_case(), symbol="T", market=market)
+    for r in evaluate(m, unrealized_pct=0)["rules"]:
+        if not r["triggered"]:
+            assert "≥" not in r["detail"], f"{r['code']}: {r['detail']}"
