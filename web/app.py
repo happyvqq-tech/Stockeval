@@ -15,11 +15,25 @@ from fastapi.templating import Jinja2Templates
 
 from data import universe
 
-from . import jobs, logic, universe_edit
+from . import auth, jobs, logic, universe_edit
 from .auth import AuthMiddleware, RateLimitMiddleware
 
 # 用絕對路徑：部署時的工作目錄不一定是專案根目錄
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
+
+
+def _access_label() -> str:
+    """導覽列右上角的狀態文字。用函式而不是固定字串，因為部署到 Render 之後
+    這裡本來寫死顯示「僅本機自用」，跟實際狀態不符 —— 已加密碼保護還這樣講
+    會讓人誤以為服務沒對外開放。"""
+    if auth.local_only():
+        return "僅本機自用"
+    if auth.configured_password():
+        return "已啟用密碼保護"
+    return "⚠ 未設定密碼"          # 理論上進不到這裡，fail-closed 會先擋下
+
+
+templates.env.globals["access_label"] = _access_label
 
 MARKETS = ["TW", "US", "CN"]
 

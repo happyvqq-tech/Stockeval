@@ -66,17 +66,6 @@ def fake_adapter(monkeypatch):
     return fake
 
 
-@pytest.fixture(autouse=True)
-def isolated_cache(monkeypatch, tmp_path):
-    """每個測試用獨立的快取目錄。
-
-    沒有這層隔離的話，測試會讀寫專案根目錄的真實 ./cache，
-    結果取決於上一次跑剩下什麼檔案 —— 測試會變成時好時壞。
-    """
-    monkeypatch.setenv("STOCKCORE_CACHE", str(tmp_path / "cache"))
-    monkeypatch.delenv("STOCKCORE_NO_CACHE", raising=False)
-
-
 @pytest.fixture
 def universe_dir(monkeypatch, tmp_path):
     monkeypatch.setattr("data.universe._DIR", tmp_path)

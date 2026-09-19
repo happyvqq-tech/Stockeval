@@ -14,7 +14,7 @@
   <a href="/" class="hover:text-emerald-400">推薦排序</a>
   <a href="/check" class="hover:text-emerald-400">個股檢查</a>
   <a href="/universe" class="hover:text-emerald-400">股票池管理</a>
-  <span class="ml-auto text-xs text-slate-400">僅本機自用</span>
+  <span class="ml-auto text-xs text-slate-400">{{ access_label() }}</span>
 </nav>
 <main class="flex-1 p-4 max-w-5xl w-full mx-auto">
 {% block content %}{% endblock %}

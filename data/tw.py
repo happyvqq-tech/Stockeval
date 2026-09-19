@@ -47,7 +47,13 @@ class TaiwanAdapter(MarketAdapter):
         return pd.DataFrame(payload.get("data", []))
 
     def _fetch(self, symbol: str, start: date, end: date) -> pd.DataFrame:
-        raw = self._get("TaiwanStockPriceAdj", symbol, start, end)
+        try:
+            raw = self._get("TaiwanStockPriceAdj", symbol, start, end)
+        except requests.HTTPError:
+            # 免費 token 對 TaiwanStockPriceAdj 通常沒有存取權限，FinMind 對此
+            # 回 400（而不是空結果），所以要在這裡接住，才走得到下面「退回未
+            # 還原股價」那條路 —— 這正是本檔案開頭說明的行為，之前漏接了。
+            raw = pd.DataFrame()
 
         if raw.empty:
             raw = self._get("TaiwanStockPrice", symbol, start, end)
