@@ -1,0 +1,104 @@
+<!-- job:{{ job.id }} -->
+{% if job.status == "running" %}
+<div hx-get="/api/review/{{ job.id }}" hx-trigger="load delay:1s" hx-swap="outerHTML"
+     class="bg-white border rounded-lg p-4">
+  <div class="text-sm text-slate-600 mb-2">復盤中　{{ job.done }}/{{ job.total }}</div>
+  <div class="w-full bg-slate-200 rounded h-2">
+    <div class="bg-emerald-500 h-2 rounded transition-all"
+         style="width: {{ (job.done / job.total * 100) if job.total else 0 }}%"></div>
+  </div>
+</div>
+
+{% elif job.status == "error" %}
+<div class="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 text-sm">
+  復盤失敗：{{ job.error }}
+</div>
+
+{% else %}
+{% set out = job.result %}
+{% set s = out.summary %}
+<div class="bg-white border rounded-lg p-4">
+  <div class="text-sm text-slate-600 mb-3">
+    {{ out.market }}　as_of <span class="font-medium">{{ out.asof }}</span>
+    　→ until <span class="font-medium">{{ out.until }}</span>
+  </div>
+
+  {% if s.n == 0 %}
+  <div class="text-sm text-slate-500">沒有任何標的同時取得 as_of 分數與之後的報酬。</div>
+  {% else %}
+  <div class="grid gap-3 sm:grid-cols-4 mb-4 text-sm">
+    <div class="bg-slate-50 rounded p-3">
+      <div class="text-slate-500 text-xs">樣本數</div>
+      <div class="text-lg font-semibold">{{ s.n }}</div>
+    </div>
+    <div class="bg-slate-50 rounded p-3">
+      <div class="text-slate-500 text-xs">平均淨報酬</div>
+      <div class="text-lg font-semibold {% if s.avg_return_pct >= 0 %}text-emerald-600{% else %}text-red-600{% endif %}">
+        {{ s.avg_return_pct }}%
+      </div>
+    </div>
+    <div class="bg-slate-50 rounded p-3">
+      <div class="text-slate-500 text-xs">勝率</div>
+      <div class="text-lg font-semibold">{{ s.win_rate_pct }}%</div>
+    </div>
+    <div class="bg-slate-50 rounded p-3">
+      <div class="text-slate-500 text-xs">分數／報酬相關係數</div>
+      <div class="text-lg font-semibold">
+        {{ s.score_return_correlation if s.score_return_correlation is not none else "—" }}
+      </div>
+    </div>
+  </div>
+  <div class="text-xs text-slate-500 mb-4">
+    分數前半平均報酬 <span class="font-medium text-slate-700">{{ s.avg_return_top_half_pct }}%</span>
+    　分數後半平均報酬 <span class="font-medium text-slate-700">{{ s.avg_return_bottom_half_pct }}%</span>
+    {% if s.avg_return_top_half_pct > s.avg_return_bottom_half_pct %}
+      —— 高分確實表現較好
+    {% elif s.avg_return_top_half_pct < s.avg_return_bottom_half_pct %}
+      —— ⚠ 高分反而表現較差，這批樣本上評分排序沒有預測力
+    {% endif %}
+  </div>
+
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="text-left border-b border-slate-200 text-slate-500">
+        <th class="py-1.5 pr-2 font-medium">代號</th>
+        <th class="py-1.5 pr-2 font-medium">名稱</th>
+        <th class="py-1.5 pr-2 font-medium text-right">as_of分數</th>
+        <th class="py-1.5 pr-2 font-medium">評級</th>
+        <th class="py-1.5 pr-2 font-medium text-right">進場價</th>
+        <th class="py-1.5 pr-2 font-medium text-right">出場價</th>
+        <th class="py-1.5 pr-2 font-medium text-right">淨報酬%</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in out.rows %}
+      <tr class="border-b border-slate-100">
+        <td class="py-1.5 pr-2 font-mono">{{ row.symbol }}</td>
+        <td class="py-1.5 pr-2">{{ names.get(row.symbol, "") }}</td>
+        <td class="py-1.5 pr-2 text-right">{{ row.score }}</td>
+        <td class="py-1.5 pr-2">{{ row.rating_label }}</td>
+        {% if row.forward %}
+        <td class="py-1.5 pr-2 text-right">{{ row.forward.entry_price }}</td>
+        <td class="py-1.5 pr-2 text-right">{{ row.forward.exit_price }}</td>
+        <td class="py-1.5 pr-2 text-right font-semibold
+          {% if row.forward.net_return_pct >= 0 %}text-emerald-600{% else %}text-red-600{% endif %}">
+          {{ row.forward.net_return_pct }}
+        </td>
+        {% else %}
+        <td colspan="3" class="py-1.5 pr-2 text-slate-400 text-xs">缺出場資料，未計入統計</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if out.failed %}
+  <div class="mt-3 text-xs text-slate-500">
+    as_of 當時取得失敗 {{ out.failed|length }} 檔：
+    {% for f in out.failed[:10] %}{{ f.symbol }}（{{ f.error }}）{% if not loop.last %}、{% endif %}{% endfor %}
+    {% if out.failed|length > 10 %}…等{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}

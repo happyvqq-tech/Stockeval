@@ -1,3 +1,4 @@
+<!-- job:{{ job.id }} -->
 {% if job.status == "running" %}
 <div hx-get="/api/scan/{{ job.id }}" hx-trigger="load delay:1s" hx-swap="outerHTML"
      class="bg-white border rounded-lg p-4">

@@ -36,10 +36,18 @@ python run_demo.py  —— 不需網路，改動 core/ 後必跑
   另有速率限制，擋在驗證之前。/healthz 是唯一免驗證端點
 - Dockerfile ＋ docs/DEPLOY.md 可部署到任何吃 Docker 的 PaaS。
   python -m web 是本機模式（127.0.0.1 ＋ LOCAL_ONLY），不可用於對外部署
-- tests/ 91 passed，含 test_invariants.py 鐵則守門測試、test_web.py 網站層、
-  test_auth.py 存取控制測試
+- core/backtest.py：復盤 ——「用 as_of 之前的資料算推薦，比對之後到 until
+  的實際報酬」，檢驗 core/recommend.py 進場評分排序有沒有預測力（分數高
+  是否後來真的表現較好），已扣市場成本。不是逐條規則回測（見下方待做）。
+  cli.py review、網站版 /review 頁都接了這個模組
+- tests/ 124 passed，含 test_invariants.py 鐵則守門測試、test_web.py 網站層、
+  test_auth.py 存取控制測試、test_tw_adapter.py、test_backtest.py
 
-待做：backtest.py、基本面資料（P1–P5）、部位層風控、交易日曆
+待做：
+- core/rules.py 逐條規則獨立回測（P6/P7/... 各自的期望值，砍掉負的）——
+  跟 core/backtest.py 現有的「進場評分復盤」不同，這個要逐日模擬規則
+  觸發與停損執行，還沒做
+- 基本面資料（P1–P5）、部位層風控、交易日曆
 
 ## 注意
 回測必須扣交易成本（台股 58.5bps / A股 10bps / 美股 0bps），

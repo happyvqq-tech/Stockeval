@@ -69,3 +69,16 @@ def run_scan(market: str, symbols: list[str], *, top=None, min_score: float = 0.
 
     ranked = rank(metrics, top=top, min_score=min_score)
     return {"ranked": ranked, "failed": failed, "any_unadjusted": any_unadjusted}
+
+
+def run_review(market: str, symbols: list[str], *, asof: str, until: str | None = None,
+               top: int | None = None, on_progress=None) -> dict:
+    """復盤頁的完整流程：某天的推薦排序 vs 之後到 until 的實際報酬。
+
+    核心邏輯全部在 core/backtest.py，這裡只是原封不動轉呼叫。注意
+    get_adapter 是在 core/backtest.py 裡呼叫的，不是這個檔案，所以
+    測試要 monkeypatch core.backtest.get_adapter，跟 run_scan /
+    run_check 監控 web.logic.get_adapter 不是同一個地方。
+    """
+    from core.backtest import review
+    return review(market, symbols, asof=asof, until=until, top=top, on_progress=on_progress)

@@ -5,6 +5,7 @@
     python cli.py rec    --market TW          掃描整個股票池並排序
     python cli.py rec    --market TW --symbols 2330,2317
     python cli.py check  --market US --symbol AAPL -u 25
+    python cli.py review --market US --asof 2026-08-01     復盤：某天的推薦排序 vs 之後的實際報酬
     python cli.py cache  --clear
 
 加 --json 輸出原始 JSON，那份就是要餵給 LLM 的東西。
@@ -166,6 +167,75 @@ def cmd_check(a) -> int:
 
 
 # --------------------------------------------------------------------------
+def cmd_review(a) -> int:
+    from core.backtest import review
+    from data import universe
+
+    try:
+        names = universe.names(a.market)
+    except FileNotFoundError:
+        names = {}
+
+    if a.symbols:
+        symbols = [s.strip() for s in a.symbols.split(",") if s.strip()]
+    else:
+        symbols = universe.symbols(a.market)
+        _err(f"未指定 --symbols，對 {a.market} 股票池共 {len(symbols)} 檔跑復盤")
+
+    def progress(done, total):
+        if not a.json:
+            _err(f"  [{done}/{total}]")
+
+    try:
+        out = review(a.market, symbols, asof=a.asof, until=a.until,
+                     top=a.top, on_progress=progress)
+    except ValueError as e:
+        _err(f"錯誤：{e}")
+        return 1
+
+    if a.json:
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+        return 0
+
+    s = out["summary"]
+    print(f"\n{a.market} 復盤　as_of {out['asof']} → until {out['until']}\n{BAR}")
+    if s.get("n", 0) == 0:
+        _err("沒有任何標的同時取得 as_of 分數與之後的報酬，無法統計。")
+        for f in out["failed"][:10]:
+            _err(f"  ✗ {f['symbol']}：{f['error']}")
+        return 1
+
+    corr = s["score_return_correlation"]
+    print(f"樣本數 {s['n']}　平均淨報酬 {s['avg_return_pct']}%　勝率 {s['win_rate_pct']}%")
+    print(f"分數前半平均報酬 {s['avg_return_top_half_pct']}%"
+          f"　分數後半平均報酬 {s['avg_return_bottom_half_pct']}%")
+    print(f"評分與後續報酬相關係數：{corr if corr is not None else '（樣本不足，無法計算）'}\n")
+
+    print(_pad("代號", 9) + _pad("名稱", 12) + _rpad("as_of分數", 9) + "  "
+          + _pad("評級", 10) + _rpad("進場價", 9) + _rpad("出場價", 9) + _rpad("淨報酬%", 9))
+    for row in out["rows"]:
+        fr = row.get("forward")
+        left = (_pad(row["symbol"], 9) + _pad(names.get(row["symbol"], ""), 12)
+                + _rpad(row["score"], 9) + "  " + _pad(row["rating_label"], 10))
+        if fr is None:
+            print(left + "（缺出場資料，未計入統計）")
+        else:
+            print(left + _rpad(fr["entry_price"], 9) + _rpad(fr["exit_price"], 9)
+                  + _rpad(fr["net_return_pct"], 9))
+
+    if out["failed"]:
+        print(f"\nas_of 當時取得失敗 {len(out['failed'])} 檔：")
+        for f in out["failed"][:10]:
+            print(f"  ✗ {f['symbol']}：{f['error']}")
+
+    print("\n注意：這是「進場評分排序品質」檢查（分數高的之後報酬是否較高），")
+    print("不是逐條規則的出場回測 —— 不模擬持有期間 P6/P8 等規則觸發停損，")
+    print("報酬已扣來回交易成本，但沒有模擬分批進出場或滑價。")
+    print()
+    return 0
+
+
+# --------------------------------------------------------------------------
 def cmd_doctor(a) -> int:
     """把「為什麼跑不起來」一次講清楚，不用你自己猜。"""
     import importlib
@@ -277,6 +347,15 @@ def main(argv=None) -> int:
     sp.add_argument("--symbol", required=True)
     sp.add_argument("-u", "--unrealized", type=float, default=0.0, help="未實現損益 %%")
     sp.set_defaults(func=cmd_check)
+
+    sp = sub.add_parser("review", help="復盤：某天的推薦排序 vs 之後到現在的實際報酬")
+    sp.add_argument("--market", required=True, choices=["TW", "US", "CN"])
+    sp.add_argument("--asof", required=True, help="復盤基準日 YYYY-MM-DD（只用這天以前的資料算推薦）")
+    sp.add_argument("--until", default=None, help="檢查到哪一天的報酬，預設今天")
+    sp.add_argument("--symbols", default=None, help="逗號分隔，留空掃整個股票池")
+    sp.add_argument("--top", type=int, default=None, help="只看 as_of 分數最高的前 N 檔")
+    sp.add_argument("--json", action="store_true", help="輸出原始 JSON")
+    sp.set_defaults(func=cmd_review)
 
     sp = sub.add_parser("doctor", help="環境自我診斷")
     sp.set_defaults(func=cmd_doctor)

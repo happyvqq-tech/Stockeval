@@ -93,6 +93,40 @@ def api_scan_status(request: Request, job_id: str):
         request, "_scan_status.html", {"job": job, "names": _names(job.market)})
 
 
+# -------------------------------------------------------------- 復盤
+@app.get("/review", response_class=HTMLResponse)
+def review_form(request: Request):
+    return templates.TemplateResponse(request, "review.html", {"markets": MARKETS})
+
+
+@app.post("/api/review", response_class=HTMLResponse)
+def api_review(request: Request, market: str = Form(...), asof: str = Form(...),
+               until: str = Form(""), symbols: str = Form(""), top: str = Form("")):
+    syms = [s.strip() for s in symbols.split(",") if s.strip()]
+    if not syms:
+        try:
+            syms = universe.symbols(market)
+        except FileNotFoundError as e:
+            return templates.TemplateResponse(request, "_scan_error.html", {"error": str(e)})
+
+    job = jobs.create_review(market, syms, asof=asof, until=until.strip() or None)
+    top_n = int(top) if top.strip() else None
+    jobs.start_review(job, top=top_n)
+
+    return templates.TemplateResponse(
+        request, "_review_status.html", {"job": job, "names": _names(market)})
+
+
+@app.get("/api/review/{job_id}", response_class=HTMLResponse)
+def api_review_status(request: Request, job_id: str):
+    job = jobs.get_review(job_id)
+    if job is None:
+        return templates.TemplateResponse(
+            request, "_scan_error.html", {"error": "找不到這個復盤工作（可能已過期）"})
+    return templates.TemplateResponse(
+        request, "_review_status.html", {"job": job, "names": _names(job.market)})
+
+
 # -------------------------------------------------------------- 個股檢查
 @app.get("/check", response_class=HTMLResponse)
 def check_form(request: Request):

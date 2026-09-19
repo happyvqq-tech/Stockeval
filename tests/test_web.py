@@ -43,7 +43,10 @@ class FakeAdapter(MarketAdapter):
 
 
 def _extract_job_id(html: str) -> str:
-    m = re.search(r"/api/scan/([a-f0-9]+)", html)
+    # 用固定的 <!-- job:ID --> 標記，不用 /api/scan/ 這個字面路徑：
+    # 背景執行緒可能在這個回應渲染完成前就跑完了（假資料算得很快），
+    # 這時「掃描中」那個分支根本不會被渲染，但標記在三種狀態下都存在。
+    m = re.search(r"<!-- job:([a-f0-9]+) -->", html)
     assert m, f"找不到 job id：{html[:300]}"
     return m.group(1)
 
@@ -232,10 +235,119 @@ def test_every_route_is_behind_access_control(universe_dir, monkeypatch):
     auth.reset_rate_limit()
     c = TestClient(app)
 
-    for path in ["/", "/check", "/universe"]:
+    for path in ["/", "/check", "/universe", "/review"]:
         assert c.get(path).status_code == 503, f"{path} 沒有被存取控制擋住"
     assert c.post("/api/scan", data={"market": "TW", "symbols": "2330"}).status_code == 503
     assert c.get("/api/scan/whatever").status_code == 503
+    assert c.post("/api/review", data={"market": "TW", "asof": "2025-01-01"}).status_code == 503
+    assert c.get("/api/review/whatever").status_code == 503
     assert c.post("/universe/add", data={"market": "TW", "code": "1", "name": "x"}).status_code == 503
     assert c.post("/universe/remove", data={"market": "TW", "code": "1"}).status_code == 503
     assert c.get("/healthz").status_code == 200
+
+
+# ---------- 復盤 ----------
+class ReviewFakeAdapter(MarketAdapter):
+    """asof 之前走勢平緩、之後明顯分歧的假時間軸，讓「高分表現較好」的
+    摘要統計有東西可以驗證，而不是隨機資料湊巧算出來的。"""
+
+    market = "TW"
+
+    _ASOF = pd.Timestamp("2025-01-01") + pd.tseries.offsets.BDay(149)
+    _UNTIL = pd.Timestamp("2025-01-01") + pd.tseries.offsets.BDay(209)
+
+    def __init__(self):
+        rng_up = np.random.default_rng(11)
+        before_up = 100 * np.exp(np.cumsum(rng_up.normal(0.003, 0.01, 150)))
+        after_up = before_up[-1] * np.exp(np.cumsum(rng_up.normal(0.002, 0.01, 60)))
+
+        rng_dn = np.random.default_rng(12)
+        before_dn = 100 * np.exp(np.cumsum(rng_dn.normal(-0.003, 0.01, 150)))
+        after_dn = before_dn[-1] * np.exp(np.cumsum(rng_dn.normal(-0.002, 0.01, 60)))
+
+        idx = pd.bdate_range("2025-01-01", periods=210)
+
+        def frame(closes):
+            c = np.asarray(closes)
+            return pd.DataFrame(
+                {"open": c, "high": c * 1.01, "low": c * 0.99, "close": c,
+                 "volume": np.full(len(c), 10_000.0)}, index=idx)
+
+        self.timelines = {
+            "UP": frame(np.concatenate([before_up, after_up])),
+            "DOWN": frame(np.concatenate([before_dn, after_dn])),
+        }
+
+    def _fetch(self, symbol, start, end):
+        full = self.timelines.get(symbol)
+        if full is None:
+            return pd.DataFrame()
+        return full.loc[str(start):str(end)]
+
+    def limit_pct(self, symbol):
+        return None
+
+
+@pytest.fixture
+def review_fake_adapter(monkeypatch):
+    fake = ReviewFakeAdapter()
+    monkeypatch.setattr("core.backtest.get_adapter", lambda market, **kw: fake)
+    return fake
+
+
+def test_review_form_loads(client):
+    r = client.get("/review")
+    assert r.status_code == 200 and "復盤" in r.text
+
+
+def test_review_full_lifecycle(review_fake_adapter, client):
+    asof = ReviewFakeAdapter._ASOF.date().isoformat()
+    until = ReviewFakeAdapter._UNTIL.date().isoformat()
+    r = client.post("/api/review", data={
+        "market": "TW", "symbols": "UP,DOWN", "asof": asof, "until": until})
+    job_id = _extract_review_job_id(r.text)
+    html = _poll_review_until_done(client, job_id)
+    assert "UP" in html and "DOWN" in html
+    assert asof in html and until in html
+
+
+def test_review_defaults_to_universe(review_fake_adapter, universe_dir, local_mode):
+    (universe_dir / "TW.txt").write_text("UP 上漲股\nDOWN 下跌股\n", encoding="utf-8")
+    client = TestClient(app)
+    asof = ReviewFakeAdapter._ASOF.date().isoformat()
+    r = client.post("/api/review", data={"market": "TW", "asof": asof})
+    job_id = _extract_review_job_id(r.text)
+    html = _poll_review_until_done(client, job_id)
+    assert "UP" in html and "DOWN" in html
+
+
+def test_review_single_failure_does_not_break_batch(review_fake_adapter, client):
+    asof = ReviewFakeAdapter._ASOF.date().isoformat()
+    until = ReviewFakeAdapter._UNTIL.date().isoformat()
+    r = client.post("/api/review", data={
+        "market": "TW", "symbols": "UP,NOT_LISTED", "asof": asof, "until": until})
+    job_id = _extract_review_job_id(r.text)
+    html = _poll_review_until_done(client, job_id)
+    assert "UP" in html
+    assert "NOT_LISTED" in html
+
+
+def test_review_unknown_job_returns_friendly_error(client):
+    assert "找不到" in client.get("/api/review/does-not-exist").text
+
+
+def _extract_review_job_id(html: str) -> str:
+    m = re.search(r"<!-- job:([a-f0-9]+) -->", html)
+    assert m, f"找不到 job id：{html[:300]}"
+    return m.group(1)
+
+
+def _poll_review_until_done(client, job_id: str, timeout=5.0) -> str:
+    deadline = time.time() + timeout
+    html = ""
+    while time.time() < deadline:
+        html = client.get(f"/api/review/{job_id}").text
+        if "復盤中" not in html:
+            return html
+        time.sleep(0.05)
+    raise TimeoutError(f"復盤逾時未完成：{html[:300]}")

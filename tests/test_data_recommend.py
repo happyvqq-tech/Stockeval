@@ -1,12 +1,14 @@
 """正規化層與推薦層測試。"""
 
+from datetime import date
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from core.indicators import compute
 from core.recommend import rank, score
-from data.base import get_adapter, normalize
+from data.base import MarketAdapter, get_adapter, normalize
 from data.cn import LIMIT_PCT, board_of
 
 
@@ -106,3 +108,52 @@ def test_score_breakdown_sums_to_total():
     s = score(compute(uptrend(), symbol="U", market="TW"))
     total = sum(b["points"] for b in s["breakdown"]) - s["cost_penalty"]
     assert abs(total - s["score"]) < 0.51
+
+
+def test_fresh_fetch_is_cropped_to_requested_range():
+    """as_of 鐵則的最後一道防線：compute() 無條件把最後一列當成 as_of，
+    如果 adapter 給的資料超出 [start, end]，一定要在這裡被裁掉，否則會
+    偷看到未來資料而不自知 —— 對回測是致命的。"""
+
+    class OverGenerousAdapter(MarketAdapter):
+        market = "TW"
+
+        def _fetch(self, symbol, start, end):
+            # 故意回傳比要求範圍更寬的資料（模擬 adapter 沒有精準遵守
+            # start/end，或資料源本身多給的情況）
+            idx = pd.bdate_range("2025-01-01", periods=200)
+            n = len(idx)
+            return pd.DataFrame(
+                {"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0,
+                 "volume": [1000] * n},
+                index=idx,
+            )
+
+    ad = OverGenerousAdapter()
+    df = ad.ohlcv("2330", "2025-02-01", "2025-02-28", use_cache=False)
+    assert df.index.min().date() >= date(2025, 2, 1)
+    assert df.index.max().date() <= date(2025, 2, 28)
+
+
+def test_cache_hit_and_fresh_fetch_crop_identically():
+    """快取命中與第一次抓取兩條路徑，對同一個請求要裁出一樣的範圍 ——
+    這正是這次修正要保證的一致性。"""
+    from data import cache as cache_mod
+
+    class Wide(MarketAdapter):
+        market = "TW"
+
+        def _fetch(self, symbol, start, end):
+            idx = pd.bdate_range("2025-01-01", periods=200)
+            return pd.DataFrame(
+                {"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0,
+                 "volume": [1000] * len(idx)}, index=idx,
+            )
+
+    ad = Wide()
+    fresh = ad.ohlcv("2330", "2025-02-01", "2025-02-28", use_cache=True)
+    assert cache_mod.load("TW", "2330") is not None       # 確認真的存進快取了
+
+    cached = ad.ohlcv("2330", "2025-02-01", "2025-02-28", use_cache=True)
+    assert ad.from_cache is True
+    pd.testing.assert_frame_equal(fresh, cached, check_freq=False)

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}復盤 - stockcore{% endblock %}
+{% block content %}
+<h1 class="text-xl font-bold mb-2">復盤</h1>
+<p class="text-sm text-slate-500 mb-4">
+  拿一個過去的日期，算出當時「只用那天以前的資料」會得到的推薦排序，
+  再看到現在（或另一個日期）為止的實際報酬，檢查評分排序有沒有預測力。
+</p>
+
+<form hx-post="/api/review" hx-target="#review-result" hx-swap="innerHTML"
+      class="bg-white rounded-lg border p-4 mb-4 grid gap-3 sm:grid-cols-4">
+  <label class="block text-sm">市場
+    <select name="market" class="mt-1 w-full border rounded px-2 py-1.5">
+      {% for m in markets %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="block text-sm">as_of（復盤基準日）
+    <input name="asof" type="date" required class="mt-1 w-full border rounded px-2 py-1.5">
+  </label>
+  <label class="block text-sm">until（比較到哪天，留空＝今天）
+    <input name="until" type="date" class="mt-1 w-full border rounded px-2 py-1.5">
+  </label>
+  <label class="block text-sm">只看前 N 檔（留空＝全部）
+    <input name="top" type="number" min="1" class="mt-1 w-full border rounded px-2 py-1.5">
+  </label>
+  <label class="block text-sm sm:col-span-4">代號（留空＝掃整個股票池）
+    <input name="symbols" placeholder="2330,2317,2454" class="mt-1 w-full border rounded px-2 py-1.5">
+  </label>
+  <div class="sm:col-span-4">
+    <button type="submit" class="bg-slate-900 text-white px-4 py-2 rounded text-sm">開始復盤</button>
+    <span class="text-xs text-slate-500 ml-2">
+      每檔要抓兩段時間的資料，比推薦排序更慢；且不會用快取，一律重新抓取。
+    </span>
+  </div>
+</form>
+
+<div class="bg-amber-50 border border-amber-300 text-amber-800 text-sm rounded-lg p-3 mb-4">
+  這是「進場評分排序品質」檢查（分數高的之後報酬是否較高），不是逐條
+  規則的出場回測 —— 不模擬持有期間 P6/P8 等規則觸發停損。報酬已扣來回
+  交易成本，但沒有模擬分批進出場或滑價。
+</div>
+
+<div id="review-result"></div>
+{% endblock %}

@@ -82,6 +82,13 @@ class MarketAdapter(ABC):
 
         self.from_cache = False
         df = normalize(self._fetch(symbol, s, e), market=self.market, symbol=symbol)
+        # 裁到 [s, e]：正常情況下 adapter 會照 start/end 跟資料源要資料，這行
+        # 不會改變任何結果；但一旦哪個 adapter 多給了範圍外的資料，這裡是唯一
+        # 擋住的地方 —— compute() 無條件把最後一列當成 as_of（鐵則 5），
+        # 一列不小心夾帶的未來資料就會讓「as_of」名不符實，對回測尤其致命。
+        # 快取命中那條路徑本來就有做這件事（見上面 hit.loc[...]），這裡補齊
+        # 讓兩條路徑保證一致。
+        df = df.loc[str(s):str(e)]
         if use_cache and cache.enabled():
             cache.save(self.market, symbol, df, requested_start=s)
         return df
