@@ -119,28 +119,65 @@ def _correlation(xs: list[float], ys: list[float]) -> float | None:
     return round(cov / (vx ** 0.5 * vy ** 0.5), 3)
 
 
-def _summarize(rows: list[dict]) -> dict:
-    """rows 已經是「有 forward 報酬」的子集，且維持 snapshot() 依分數
-    由高到低排序。"""
-    if not rows:
+def _factor_ic(rows: list[dict]) -> dict[str, float | None]:
+    """每個因子各自的 IC（information coefficient）：該因子得分與後續報酬
+    的相關係數。
+
+    這是校準權重時唯一有意義的依據 —— 總分的相關係數只告訴你「整體有沒有
+    用」，這裡才看得出是哪個因子在出力、哪個在扯後腿。要調 config/rules.yaml
+    的權重，看這個，不要憑感覺。
+    """
+    returns = [r["forward"]["net_return_pct"] for r in rows]
+    factors: dict[str, list[float]] = {}
+    for r in rows:
+        for b in r.get("breakdown", []):
+            factors.setdefault(b["factor"], []).append(b["points"])
+
+    return {
+        name: _correlation(points, returns)
+        for name, points in factors.items()
+        if len(points) == len(returns)      # 因子資料不齊的就不算，不要硬湊
+    }
+
+
+def _summarize(selected: list[dict], universe: list[dict]) -> dict:
+    """selected：實際「選出來」的那批（有 top 就是前 N 檔）。
+    universe：所有算得出前後報酬的標的，當作對照基準。
+
+    兩者分開的理由：只報 selected 的平均報酬沒有意義 —— 大盤整段漲 10%
+    時，選股組合漲 8% 其實是負貢獻。一定要跟「不選股、整池等權買進」
+    的結果比，超額報酬才是這套評分真正的價值。
+    """
+    if not selected:
         return {"n": 0}
 
-    scores_ = [r["score"] for r in rows]
-    returns = [r["forward"]["net_return_pct"] for r in rows]
-    n = len(rows)
+    scores_ = [r["score"] for r in selected]
+    returns = [r["forward"]["net_return_pct"] for r in selected]
+    n = len(returns)
+    avg = sum(returns) / n
+
+    bench_returns = [r["forward"]["net_return_pct"] for r in universe]
+    bench_avg = sum(bench_returns) / len(bench_returns) if bench_returns else None
 
     half = n // 2
     top_half = returns[:half] if half else returns
     bottom_half = returns[-half:] if half else returns
 
-    return {
+    out = {
         "n": n,
-        "avg_return_pct": round(sum(returns) / n, 2),
+        "avg_return_pct": round(avg, 2),
         "win_rate_pct": round(sum(1 for x in returns if x > 0) / n * 100, 1),
         "avg_return_top_half_pct": round(sum(top_half) / len(top_half), 2),
         "avg_return_bottom_half_pct": round(sum(bottom_half) / len(bottom_half), 2),
         "score_return_correlation": _correlation(scores_, returns),
+        # 對照基準：整池等權買進、完全不選股的結果
+        "benchmark_n": len(bench_returns),
+        "benchmark_avg_return_pct": round(bench_avg, 2) if bench_avg is not None else None,
+        "excess_return_pct": round(avg - bench_avg, 2) if bench_avg is not None else None,
+        # 逐因子 IC 用整池算，樣本比較多
+        "factor_ic": _factor_ic(universe) if universe else {},
     }
+    return out
 
 
 def review(market: str, symbols: list[str], *, asof, until=None,
@@ -152,20 +189,25 @@ def review(market: str, symbols: list[str], *, asof, until=None,
     """
     asof_d, until_d = _to_date(asof), _to_date(until) if until else date.today()
     snap = snapshot(market, symbols, asof=asof_d)
-    rows = snap["ranked"][:top] if top else snap["ranked"]
+    all_rows = snap["ranked"]
 
-    total = len(rows)
-    for i, row in enumerate(rows, 1):
+    # 不管 top 設多少，全部標的的後續報酬都要算 —— 對照基準（整池等權）
+    # 少了任何一檔都會失真，而基準沒有算對的話整份報告就沒有解讀價值。
+    total = len(all_rows)
+    for i, row in enumerate(all_rows, 1):
         row["forward"] = forward_return(market, row["symbol"], asof=asof_d, until=until_d)
         if on_progress:
             on_progress(i, total)
 
-    priced = [r for r in rows if r["forward"] is not None]
+    universe_priced = [r for r in all_rows if r["forward"] is not None]
+    rows = all_rows[:top] if top else all_rows
+    selected_priced = [r for r in rows if r["forward"] is not None]
+
     return {
         "market": market,
         "asof": str(asof_d),
         "until": str(until_d),
         "rows": rows,
         "failed": snap["failed"],
-        "summary": _summarize(priced),
+        "summary": _summarize(selected_priced, universe_priced),
     }

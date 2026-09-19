@@ -242,3 +242,78 @@ def test_correlation_perfect_positive():
 
 def test_correlation_perfect_negative():
     assert bt._correlation([1.0, 2.0, 3.0], [30.0, 20.0, 10.0]) == pytest.approx(-1.0)
+
+
+# ---------- 對照基準與逐因子 IC（校準用） ----------
+def test_summary_includes_benchmark_and_excess_return(timeline_adapter):
+    out = bt.review("TW", ["UP", "DOWN", "FLAT_RISE"], asof=ASOF, until=UNTIL)
+    s = out["summary"]
+    assert s["benchmark_n"] == 3
+    assert s["benchmark_avg_return_pct"] is not None
+    # 沒有 top 時「選出來的」就是全部，超額報酬必定為 0
+    assert s["excess_return_pct"] == 0.0
+
+
+def test_benchmark_covers_whole_universe_even_when_top_limits_rows(timeline_adapter):
+    """top 只影響顯示與選股組合，對照基準一定要涵蓋整池 —— 否則拿選出來
+    的那幾檔當自己的基準，超額報酬永遠是 0，整個比較失去意義。"""
+    out = bt.review("TW", ["UP", "DOWN", "FLAT_RISE"], asof=ASOF, until=UNTIL, top=1)
+    s = out["summary"]
+    assert len(out["rows"]) == 1          # 只顯示前 1 檔
+    assert s["n"] == 1
+    assert s["benchmark_n"] == 3          # 但基準看的是三檔
+    assert s["excess_return_pct"] != 0.0
+
+
+def test_excess_return_is_negative_when_picks_lag_the_universe(monkeypatch):
+    """選股輸給大盤時要如實報負的超額報酬，不能只報「平均賺 X%」就交差。"""
+    rng = np.random.default_rng(7)
+    # LOSER：as_of 前是完美多頭（分數最高），之後反轉下跌
+    before_up = 100 * np.exp(np.linspace(0, 0.30, 150)) + rng.normal(0, 0.15, 150)
+    loser = _series(np.concatenate([before_up, before_up[-1] * np.exp(np.linspace(0, -0.20, 60))]))
+    # WINNER：as_of 前弱勢（分數低），之後大漲
+    before_dn = 100 * np.exp(np.linspace(0, -0.10, 150)) + rng.normal(0, 0.15, 150)
+    winner = _series(np.concatenate([before_dn, before_dn[-1] * np.exp(np.linspace(0, 0.40, 60))]))
+
+    ad = TimelineAdapter({"LOSER": loser, "WINNER": winner})
+    monkeypatch.setattr("core.backtest.get_adapter", lambda market, **kw: ad)
+
+    out = bt.review("TW", ["LOSER", "WINNER"], asof=ASOF, until=UNTIL, top=1)
+    s = out["summary"]
+    assert out["rows"][0]["symbol"] == "LOSER"      # 評分挑了後來下跌的那檔
+    assert s["excess_return_pct"] < 0                # 必須誠實反映為負貢獻
+
+
+def test_factor_ic_reports_every_factor(timeline_adapter):
+    out = bt.review("TW", ["UP", "DOWN", "FLAT_RISE"], asof=ASOF, until=UNTIL)
+    ic = out["summary"]["factor_ic"]
+    assert set(ic) == {"trend", "momentum", "volume", "position", "volatility"}
+
+
+def test_factor_ic_detects_which_factor_carries_the_signal(monkeypatch):
+    """逐因子 IC 是校準權重的唯一依據，必須真的分得出哪個因子有預測力。
+
+    這裡用四檔標的，讓 trend 分數與後續報酬同向、完全一致，
+    trend 的 IC 應該明顯為正。"""
+    timelines = {}
+    # 四種 as_of 前的趨勢強度，之後的漲幅依同樣順序排列
+    for name, slope_before, slope_after in [
+        ("A", 0.30, 0.20), ("B", 0.15, 0.10),
+        ("C", -0.05, -0.05), ("D", -0.25, -0.15),
+    ]:
+        before = 100 * np.exp(np.linspace(0, slope_before, 150))
+        after = before[-1] * np.exp(np.linspace(0, slope_after, 60))
+        timelines[name] = _series(np.concatenate([before, after]))
+
+    ad = TimelineAdapter(timelines)
+    monkeypatch.setattr("core.backtest.get_adapter", lambda market, **kw: ad)
+
+    ic = bt.review("TW", list(timelines), asof=ASOF, until=UNTIL)["summary"]["factor_ic"]
+    assert ic["trend"] is not None and ic["trend"] > 0.5
+
+
+def test_factor_ic_empty_when_no_priced_rows(monkeypatch):
+    ad = TimelineAdapter({})
+    monkeypatch.setattr("core.backtest.get_adapter", lambda market, **kw: ad)
+    out = bt.review("TW", ["NOPE"], asof=ASOF, until=UNTIL)
+    assert out["summary"] == {"n": 0}

@@ -206,10 +206,24 @@ def cmd_review(a) -> int:
         return 1
 
     corr = s["score_return_correlation"]
-    print(f"樣本數 {s['n']}　平均淨報酬 {s['avg_return_pct']}%　勝率 {s['win_rate_pct']}%")
+    print(f"選股組合 {s['n']} 檔　平均淨報酬 {s['avg_return_pct']}%　勝率 {s['win_rate_pct']}%")
+
+    bench, excess = s["benchmark_avg_return_pct"], s["excess_return_pct"]
+    if bench is not None:
+        verdict = "勝過" if excess > 0 else ("輸給" if excess < 0 else "等於")
+        print(f"對照基準（整池 {s['benchmark_n']} 檔等權、完全不選股）{bench}%"
+              f"　→ 超額報酬 {excess:+.2f}%（{verdict}不選股）")
     print(f"分數前半平均報酬 {s['avg_return_top_half_pct']}%"
           f"　分數後半平均報酬 {s['avg_return_bottom_half_pct']}%")
-    print(f"評分與後續報酬相關係數：{corr if corr is not None else '（樣本不足，無法計算）'}\n")
+    print(f"評分與後續報酬相關係數：{corr if corr is not None else '（樣本不足，無法計算）'}")
+
+    ic = s.get("factor_ic") or {}
+    if ic:
+        print("\n逐因子 IC（該因子得分與後續報酬的相關係數，校準權重看這個）：")
+        for name, v in sorted(ic.items(), key=lambda kv: (kv[1] is None, -(kv[1] or 0))):
+            bar = "（樣本不足）" if v is None else f"{v:+.3f}"
+            print(f"  {name:<12}{bar}")
+    print()
 
     print(_pad("代號", 9) + _pad("名稱", 12) + _rpad("as_of分數", 9) + "  "
           + _pad("評級", 10) + _rpad("進場價", 9) + _rpad("出場價", 9) + _rpad("淨報酬%", 9))
@@ -231,6 +245,7 @@ def cmd_review(a) -> int:
     print("\n注意：這是「進場評分排序品質」檢查（分數高的之後報酬是否較高），")
     print("不是逐條規則的出場回測 —— 不模擬持有期間 P6/P8 等規則觸發停損，")
     print("報酬已扣來回交易成本，但沒有模擬分批進出場或滑價。")
+    print("單一 as_of 日期只是一個樣本，不要據此調權重；校準方法見 docs/CALIBRATION.md。")
     print()
     return 0
 

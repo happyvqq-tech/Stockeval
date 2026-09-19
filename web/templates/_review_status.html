@@ -48,6 +48,20 @@
       </div>
     </div>
   </div>
+  {% if s.benchmark_avg_return_pct is not none %}
+  <div class="rounded p-3 mb-3 text-sm border
+    {% if s.excess_return_pct > 0 %}bg-emerald-50 border-emerald-300 text-emerald-800
+    {% elif s.excess_return_pct < 0 %}bg-red-50 border-red-300 text-red-800
+    {% else %}bg-slate-50 border-slate-300 text-slate-700{% endif %}">
+    對照基準：整池 {{ s.benchmark_n }} 檔等權、完全不選股 →
+    <span class="font-semibold">{{ s.benchmark_avg_return_pct }}%</span>
+    　超額報酬 <span class="font-semibold">{{ "%+.2f"|format(s.excess_return_pct) }}%</span>
+    {% if s.excess_return_pct > 0 %}（選股勝過不選股）
+    {% elif s.excess_return_pct < 0 %}（⚠ 選股輸給不選股，這批樣本上評分是負貢獻）
+    {% else %}（與不選股相同）{% endif %}
+  </div>
+  {% endif %}
+
   <div class="text-xs text-slate-500 mb-4">
     分數前半平均報酬 <span class="font-medium text-slate-700">{{ s.avg_return_top_half_pct }}%</span>
     　分數後半平均報酬 <span class="font-medium text-slate-700">{{ s.avg_return_bottom_half_pct }}%</span>
@@ -57,6 +71,28 @@
       —— ⚠ 高分反而表現較差，這批樣本上評分排序沒有預測力
     {% endif %}
   </div>
+
+  {% if s.factor_ic %}
+  <div class="bg-slate-50 rounded p-3 mb-4">
+    <div class="text-xs text-slate-500 mb-2">
+      逐因子 IC（各因子得分與後續報酬的相關係數）——
+      要調 <code>config/rules.yaml</code> 的權重，看這個，不要憑感覺
+    </div>
+    <div class="grid gap-1 sm:grid-cols-5 text-xs">
+      {% for name, v in s.factor_ic.items() %}
+      <div class="flex justify-between sm:block">
+        <span class="text-slate-500">{{ name }}</span>
+        <span class="font-mono font-semibold
+          {% if v is none %}text-slate-400
+          {% elif v > 0 %}text-emerald-600{% elif v < 0 %}text-red-600
+          {% else %}text-slate-600{% endif %}">
+          {{ "%+.3f"|format(v) if v is not none else "—" }}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
 
   <table class="w-full text-sm">
     <thead>
