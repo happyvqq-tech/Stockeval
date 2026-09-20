@@ -16,6 +16,7 @@ from fastapi.templating import Jinja2Templates
 from data import universe
 
 from . import auth, jobs, logic, universe_edit
+from .summary import review_text
 from .auth import AuthMiddleware, RateLimitMiddleware
 
 # 用絕對路徑：部署時的工作目錄不一定是專案根目錄
@@ -34,6 +35,7 @@ def _access_label() -> str:
 
 
 templates.env.globals["access_label"] = _access_label
+templates.env.globals["review_text"] = review_text
 
 MARKETS = ["TW", "US", "CN"]
 

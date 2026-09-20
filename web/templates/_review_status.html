@@ -18,9 +18,14 @@
 {% set out = job.result %}
 {% set s = out.summary %}
 <div class="bg-white border rounded-lg p-4">
-  <div class="text-sm text-slate-600 mb-3">
-    {{ out.market }}　as_of <span class="font-medium">{{ out.asof }}</span>
-    　→ until <span class="font-medium">{{ out.until }}</span>
+  <div class="flex justify-between items-start gap-3 mb-3">
+    <div class="text-sm text-slate-600">
+      {{ out.market }}　as_of <span class="font-medium">{{ out.asof }}</span>
+      　→ until <span class="font-medium">{{ out.until }}</span>
+    </div>
+    <button type="button" onclick="copyText('review-summary-text', this)"
+            class="shrink-0 border border-slate-300 rounded px-3 py-1 text-xs
+                   hover:bg-slate-50">複製摘要</button>
   </div>
 
   {% if s.n == 0 %}
@@ -205,5 +210,14 @@
     {% if out.failed|length > 10 %}…等{% endif %}
   </div>
   {% endif %}
+
+  <details class="mt-4">
+    <summary class="text-xs text-slate-500 cursor-pointer">
+      純文字摘要（複製失敗時可以從這裡手動選取）
+    </summary>
+    <pre id="review-summary-text"
+         class="mt-2 p-3 bg-slate-50 rounded text-xs overflow-x-auto
+                whitespace-pre font-mono">{{ review_text(out) }}</pre>
+  </details>
 </div>
 {% endif %}

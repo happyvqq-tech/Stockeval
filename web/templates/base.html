@@ -23,5 +23,35 @@
 <footer class="text-xs text-slate-500 text-center py-4 border-t mt-8">
   本工具僅為技術指標計算結果，不構成投資建議；評分權重尚未經回測驗證，使用者自負盈虧。
 </footer>
+<script>
+// 複製指定元素的純文字內容。放在 base.html 而不是被 HTMX 換進來的片段裡，
+// 避免每次輪詢都重新定義一次。
+async function copyText(sourceId, btn) {
+  const el = document.getElementById(sourceId);
+  if (!el) return;
+  const original = btn.textContent;
+  const done = (ok) => {
+    btn.textContent = ok ? "已複製" : "複製失敗，請展開下方純文字手動選取";
+    setTimeout(() => { btn.textContent = original; }, 2500);
+  };
+  try {
+    // navigator.clipboard 需要安全來源（HTTPS 或 localhost）
+    await navigator.clipboard.writeText(el.textContent);
+    done(true);
+  } catch (e) {
+    try {   // 退路：舊瀏覽器或非安全來源
+      const ta = document.createElement("textarea");
+      ta.value = el.textContent;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      done(ok);
+    } catch (e2) { done(false); }
+  }
+}
+</script>
 </body>
 </html>

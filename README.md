@@ -111,7 +111,9 @@ python -m web
 - `/universe`（股票池管理）：直接在網頁上增刪 `config/universe/*.txt`
   的代號，每次修改前自動備份成 `.bak`
 - `/review`（復盤）：網站版的「事後檢驗」，同上，會跑得比推薦排序慢
-  （每檔要抓兩段時間的資料），且刻意不用快取（見下方限制）
+  （每檔要抓兩段時間的資料），且刻意不用快取（見下方限制）。
+  結果頁有「複製摘要」按鈕，一鍵複製純文字版的統計區塊（不含個股明細），
+  方便貼給別人；複製失敗時可以展開下方的純文字區塊手動選取
 
 網站層（`web/`）只呼叫 `core/` 和 `data/` 既有的函式，不重複計算任何指標，
 `web/logic.py` 是所有路由共用的組裝邏輯。換 port：`STOCKCORE_WEB_PORT=8080 python -m web`。
@@ -174,7 +176,7 @@ LLM 不做任何計算、不做任何判斷，只把數字寫成人話。
 
 ## 已驗證行為
 
-`pytest tests/ -q` → 154 passed。以下每一條都有對應測試：
+`pytest tests/ -q` → 164 passed。以下每一條都有對應測試：
 
 - 美股 `p6_require_volume: true` → 量比不足時不觸發 P6（假跌破過濾）
   → `test_p6_filtered_in_us_by_volume`

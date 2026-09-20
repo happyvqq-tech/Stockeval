@@ -46,10 +46,12 @@ python run_demo.py  —— 不需網路，改動 core/ 後必跑
   cli.py review、網站版 /review 頁都接了這個模組。輸出含對照基準
   （整池等權不選股的報酬）與超額報酬、分位數分組（Q1~Q5）、逐因子 IC
   ＋離散度診斷（標準差／離散度／集中度，分辨真 IC 與被離群值帶出來的假 IC，
-  門檻在 config/rules.yaml 的 score.ic_diagnostics）
+  門檻在 config/rules.yaml 的 score.ic_diagnostics）。
+  web/summary.py 產生可一鍵複製的純文字摘要（表格標題一律 ASCII，
+  中文全形字當標題貼到別處會對不齊）
 - docs/CALIBRATION.md 驗證與校準方法：單一 as_of 不足以調權重、生存者
   偏誤（universe 是今天的清單）、台股未還原權息的偏差、樣本外紀律
-- tests/ 154 passed，含 test_invariants.py 鐵則守門測試、test_web.py 網站層、
+- tests/ 164 passed，含 test_invariants.py 鐵則守門測試、test_web.py 網站層、
   test_auth.py 存取控制測試、test_tw_adapter.py、test_backtest.py
 
 待做：
