@@ -117,25 +117,49 @@
   </div>
   {% endif %}
 
-  {% if s.factor_ic %}
+  {% if s.factor_stats %}
   <div class="bg-slate-50 rounded p-3 mb-4">
     <div class="text-xs text-slate-500 mb-2">
-      逐因子 IC（各因子得分與後續報酬的相關係數）——
-      要調 <code>config/rules.yaml</code> 的權重，看這個，不要憑感覺
+      逐因子 IC ——  要調 <code>config/rules.yaml</code> 的權重看這個，
+      但先看最後一欄：鑑別度不足的因子，IC 是被少數離群值帶出來的，不能信
     </div>
-    <div class="grid gap-1 sm:grid-cols-5 text-xs">
-      {% for name, v in s.factor_ic.items() %}
-      <div class="flex justify-between sm:block">
-        <span class="text-slate-500">{{ name }}</span>
-        <span class="font-mono font-semibold
-          {% if v is none %}text-slate-400
-          {% elif v > 0 %}text-emerald-600{% elif v < 0 %}text-red-600
-          {% else %}text-slate-600{% endif %}">
-          {{ "%+.3f"|format(v) if v is not none else "—" }}
-        </span>
-      </div>
-      {% endfor %}
+    <table class="w-full text-xs">
+      <thead>
+        <tr class="text-left text-slate-500">
+          <th class="py-1 pr-2 font-medium">因子</th>
+          <th class="py-1 pr-2 font-medium text-right">IC</th>
+          <th class="py-1 pr-2 font-medium text-right" title="得分的橫斷面標準差">標準差</th>
+          <th class="py-1 pr-2 font-medium text-right" title="標準差 ÷ 權重，可跨因子比較">離散度</th>
+          <th class="py-1 pr-2 font-medium text-right" title="最多標的共用的那個分數佔比">集中度</th>
+          <th class="py-1 pr-2 font-medium">判定</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for name, v in s.factor_stats.items() %}
+        <tr class="border-t border-slate-200 {% if not v.reliable %}opacity-60{% endif %}">
+          <td class="py-1 pr-2">{{ name }}</td>
+          <td class="py-1 pr-2 text-right font-mono font-semibold
+            {% if v.ic is none %}text-slate-400
+            {% elif v.ic > 0 %}text-emerald-600{% elif v.ic < 0 %}text-red-600
+            {% else %}text-slate-600{% endif %}">
+            {{ "%+.3f"|format(v.ic) if v.ic is not none else "—" }}
+          </td>
+          <td class="py-1 pr-2 text-right font-mono text-slate-500">{{ v.std }}</td>
+          <td class="py-1 pr-2 text-right font-mono text-slate-500">{{ v.std_ratio }}</td>
+          <td class="py-1 pr-2 text-right font-mono text-slate-500">{{ v.concentration_pct }}%</td>
+          <td class="py-1 pr-2 {% if v.reliable %}text-slate-500{% else %}text-amber-700 font-medium{% endif %}">
+            {{ "可信" if v.reliable else "✗ 鑑別度不足" }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if s.factor_stats.values()|rejectattr("reliable")|list %}
+    <div class="text-xs text-amber-700 mt-2">
+      標記「鑑別度不足」的因子，對多數標的給出幾乎相同的分數，IC 由少數離群值
+      主導。該做的是修這個因子的評分邏輯讓它拉得開，不是把權重往 IC 的方向搬。
     </div>
+    {% endif %}
   </div>
   {% endif %}
 

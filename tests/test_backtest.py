@@ -284,10 +284,12 @@ def test_excess_return_is_negative_when_picks_lag_the_universe(monkeypatch):
     assert s["excess_return_pct"] < 0                # 必須誠實反映為負貢獻
 
 
-def test_factor_ic_reports_every_factor(timeline_adapter):
+def test_factor_stats_reports_every_factor(timeline_adapter):
     out = bt.review("TW", ["UP", "DOWN", "FLAT_RISE"], asof=ASOF, until=UNTIL)
-    ic = out["summary"]["factor_ic"]
-    assert set(ic) == {"trend", "momentum", "volume", "position", "volatility"}
+    stats = out["summary"]["factor_stats"]
+    assert set(stats) == {"trend", "momentum", "volume", "position", "volatility"}
+    for v in stats.values():
+        assert set(v) == {"ic", "std", "std_ratio", "concentration_pct", "reliable"}
 
 
 def test_factor_ic_detects_which_factor_carries_the_signal(monkeypatch):
@@ -308,11 +310,11 @@ def test_factor_ic_detects_which_factor_carries_the_signal(monkeypatch):
     ad = TimelineAdapter(timelines)
     monkeypatch.setattr("core.backtest.get_adapter", lambda market, **kw: ad)
 
-    ic = bt.review("TW", list(timelines), asof=ASOF, until=UNTIL)["summary"]["factor_ic"]
-    assert ic["trend"] is not None and ic["trend"] > 0.5
+    stats = bt.review("TW", list(timelines), asof=ASOF, until=UNTIL)["summary"]["factor_stats"]
+    assert stats["trend"]["ic"] is not None and stats["trend"]["ic"] > 0.5
 
 
-def test_factor_ic_empty_when_no_priced_rows(monkeypatch):
+def test_factor_stats_empty_when_no_priced_rows(monkeypatch):
     ad = TimelineAdapter({})
     monkeypatch.setattr("core.backtest.get_adapter", lambda market, **kw: ad)
     out = bt.review("TW", ["NOPE"], asof=ASOF, until=UNTIL)
@@ -390,3 +392,74 @@ def test_selected_is_whole_universe_flag(timeline_adapter):
 
     subset = bt.review("TW", ["UP", "DOWN", "FLAT_RISE"], asof=ASOF, until=UNTIL, top=1)
     assert subset["summary"]["selected_is_whole_universe"] is False
+
+
+# ---------- 因子離散度診斷：分辨真 IC 與假 IC ----------
+def test_low_variance_factor_is_flagged_unreliable(monkeypatch):
+    """重現實際遇到的情況：volatility 對絕大多數大型股都給滿分，
+    相關係數卻高達 -0.5。那個數字是被少數幾檔離群值帶出來的，
+    不能拿來調權重 —— 必須標記成不可信。"""
+    timelines = {}
+    # 12 檔年化波動都落在 0.15~0.45 的「滿分區間」，只有 2 檔是高波動
+    for i in range(12):
+        vol = 0.012 if i < 10 else 0.055        # 前 10 檔低波動、後 2 檔高波動
+        rng = np.random.default_rng(100 + i)
+        before = 100 * np.exp(np.cumsum(rng.normal(0.001, vol, 150)))
+        after = before[-1] * np.exp(np.cumsum(rng.normal(0.002, vol, 60)))
+        timelines[f"V{i:02d}"] = _series(np.concatenate([before, after]))
+
+    ad = TimelineAdapter(timelines)
+    monkeypatch.setattr("core.backtest.get_adapter", lambda market, **kw: ad)
+    stats = bt.review("TW", list(timelines), asof=ASOF,
+                      until=UNTIL)["summary"]["factor_stats"]
+
+    vol_stat = stats["volatility"]
+    assert vol_stat["concentration_pct"] >= 60.0, vol_stat
+    assert vol_stat["reliable"] is False, f"高度集中的因子應標記為不可信：{vol_stat}"
+
+
+def test_well_spread_factor_is_flagged_reliable(monkeypatch):
+    """反面：分數分散的因子，IC 才可信。"""
+    ad = _many_symbol_adapter(15, monotonic=True)
+    monkeypatch.setattr("core.backtest.get_adapter", lambda market, **kw: ad)
+    stats = bt.review("TW", list(ad.timelines), asof=ASOF,
+                      until=UNTIL)["summary"]["factor_stats"]
+    assert stats["trend"]["reliable"] is True, stats["trend"]
+
+
+def test_std_ratio_is_comparable_across_weights(timeline_adapter):
+    """std_ratio = std ÷ 權重，所以權重 30 的 trend 和權重 10 的
+    volatility 才能放在一起比較。"""
+    stats = bt.review("TW", ["UP", "DOWN", "FLAT_RISE"], asof=ASOF,
+                      until=UNTIL)["summary"]["factor_stats"]
+    for name, v in stats.items():
+        assert 0.0 <= v["std_ratio"] <= 1.0, (name, v)
+        assert 0.0 < v["concentration_pct"] <= 100.0, (name, v)
+
+
+def test_ic_diagnostics_thresholds_come_from_config(timeline_adapter):
+    """鐵則 2：門檻要能從 config 調，不是寫死在程式裡。"""
+    from config import rules as rules_cfg
+
+    loose = rules_cfg()
+    loose["score"]["ic_diagnostics"] = {"min_std_ratio": 0.0,
+                                        "max_concentration_pct": 100.0}
+    stats = bt.review("TW", ["UP", "DOWN", "FLAT_RISE"], asof=ASOF,
+                      until=UNTIL, cfg=loose)["summary"]["factor_stats"]
+    assert all(v["reliable"] for v in stats.values())
+
+    strict = rules_cfg()
+    strict["score"]["ic_diagnostics"] = {"min_std_ratio": 0.99,
+                                         "max_concentration_pct": 0.0}
+    stats = bt.review("TW", ["UP", "DOWN", "FLAT_RISE"], asof=ASOF,
+                      until=UNTIL, cfg=strict)["summary"]["factor_stats"]
+    assert not any(v["reliable"] for v in stats.values())
+
+
+def test_std_and_concentration_helpers():
+    assert bt._std([5.0, 5.0, 5.0]) == 0.0
+    assert bt._std([1.0]) == 0.0
+    assert bt._std([0.0, 10.0]) == 5.0
+    assert bt._concentration_pct([1.0, 1.0, 1.0, 2.0]) == 75.0
+    assert bt._concentration_pct([1.0, 2.0, 3.0, 4.0]) == 25.0
+    assert bt._concentration_pct([]) == 0.0

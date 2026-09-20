@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from config import market_cfg
+from config import market_cfg, rules as rules_cfg
 from core.indicators import compute
 from core.recommend import score
 from data.base import QuotaExceeded, get_adapter
@@ -121,25 +121,69 @@ def _correlation(xs: list[float], ys: list[float]) -> float | None:
     return round(cov / (vx ** 0.5 * vy ** 0.5), 3)
 
 
-def _factor_ic(rows: list[dict]) -> dict[str, float | None]:
-    """每個因子各自的 IC（information coefficient）：該因子得分與後續報酬
-    的相關係數。
+def _std(xs: list[float]) -> float:
+    """母體標準差。這裡要的是「這批樣本的離散程度」這個描述統計，
+    不是推論母體，所以用 n 而不是 n-1。"""
+    n = len(xs)
+    if n < 2:
+        return 0.0
+    mean = sum(xs) / n
+    return (sum((x - mean) ** 2 for x in xs) / n) ** 0.5
 
-    這是校準權重時唯一有意義的依據 —— 總分的相關係數只告訴你「整體有沒有
-    用」，這裡才看得出是哪個因子在出力、哪個在扯後腿。要調 config/rules.yaml
-    的權重，看這個，不要憑感覺。
+
+def _concentration_pct(xs: list[float]) -> float:
+    """最多標的共用的那一個分數，佔全體的百分比。"""
+    if not xs:
+        return 0.0
+    counts: dict[float, int] = {}
+    for x in xs:
+        counts[x] = counts.get(x, 0) + 1
+    return max(counts.values()) / len(xs) * 100
+
+
+def _factor_stats(rows: list[dict], cfg: dict) -> dict[str, dict]:
+    """每個因子的 IC ＋ 判斷這個 IC 可不可信所需的離散度統計。
+
+    只看 IC 會被騙：一個因子如果對大多數標的給出相同分數（例如波動率
+    對絕大多數大型股都給滿分），相關係數會被少數幾檔離群值整個帶走，
+    數字可能很大卻完全不穩定。所以每個因子一併回報：
+
+      ic                 該因子得分與後續報酬的相關係數
+      std                得分的橫斷面標準差
+      std_ratio          std ÷ 權重，跨不同權重的因子才能互相比較
+      concentration_pct  最多標的共用的那一個分數佔全體的比例
+      reliable           上面兩項是否都通過 config 的門檻
+
+    reliable 為 False 時，那個 IC 不該拿來調權重 —— 該處理的是這個因子
+    本身沒有鑑別度，而不是把權重往 IC 的方向搬。
     """
+    diag = cfg["score"]["ic_diagnostics"]
     returns = [r["forward"]["net_return_pct"] for r in rows]
-    factors: dict[str, list[float]] = {}
+
+    points_by_factor: dict[str, list[float]] = {}
+    weight_by_factor: dict[str, float] = {}
     for r in rows:
         for b in r.get("breakdown", []):
-            factors.setdefault(b["factor"], []).append(b["points"])
+            points_by_factor.setdefault(b["factor"], []).append(b["points"])
+            weight_by_factor[b["factor"]] = b["weight"]
 
-    return {
-        name: _correlation(points, returns)
-        for name, points in factors.items()
-        if len(points) == len(returns)      # 因子資料不齊的就不算，不要硬湊
-    }
+    out = {}
+    for name, points in points_by_factor.items():
+        if len(points) != len(returns):     # 因子資料不齊的就不算，不要硬湊
+            continue
+        weight = weight_by_factor.get(name) or 0
+        std = _std(points)
+        std_ratio = std / weight if weight else 0.0
+        conc = _concentration_pct(points)
+        out[name] = {
+            "ic": _correlation(points, returns),
+            "std": round(std, 2),
+            "std_ratio": round(std_ratio, 3),
+            "concentration_pct": round(conc, 1),
+            "reliable": (std_ratio >= diag["min_std_ratio"]
+                         and conc <= diag["max_concentration_pct"]),
+        }
+    return out
 
 
 def _score_buckets(universe: list[dict], bench_avg: float | None) -> list[dict]:
@@ -176,7 +220,7 @@ def _score_buckets(universe: list[dict], bench_avg: float | None) -> list[dict]:
     return buckets
 
 
-def _summarize(selected: list[dict], universe: list[dict]) -> dict:
+def _summarize(selected: list[dict], universe: list[dict], cfg: dict) -> dict:
     """selected：實際「選出來」的那批（有 top 就是前 N 檔）。
     universe：所有算得出前後報酬的標的，當作對照基準。
 
@@ -213,15 +257,15 @@ def _summarize(selected: list[dict], universe: list[dict]) -> dict:
         # selected 就是整池時，超額報酬必然為 0，不是「評分沒用」的意思。
         # 顯示層要靠這個旗標避免誤導。
         "selected_is_whole_universe": len(returns) == len(bench_returns),
-        # 逐因子 IC 與分位數分組都用整池算，樣本比較多
-        "factor_ic": _factor_ic(universe) if universe else {},
+        # 逐因子統計與分位數分組都用整池算，樣本比較多
+        "factor_stats": _factor_stats(universe, cfg) if universe else {},
         "score_buckets": _score_buckets(universe, bench_avg),
     }
     return out
 
 
 def review(market: str, symbols: list[str], *, asof, until=None,
-           top: int | None = None, on_progress=None) -> dict:
+           top: int | None = None, on_progress=None, cfg: dict | None = None) -> dict:
     """完整復盤：as_of 的推薦排序 ＋ 之後到 until 的實際報酬 ＋ 摘要統計。
 
     on_progress(done, total) 在每算完一檔的 forward_return 後呼叫一次，
@@ -249,5 +293,6 @@ def review(market: str, symbols: list[str], *, asof, until=None,
         "until": str(until_d),
         "rows": rows,
         "failed": snap["failed"],
-        "summary": _summarize(selected_priced, universe_priced),
+        "summary": _summarize(selected_priced, universe_priced,
+                              rules_cfg() if cfg is None else cfg),
     }

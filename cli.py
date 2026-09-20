@@ -237,12 +237,20 @@ def cmd_review(a) -> int:
                   f"  平均報酬 {b['avg_return_pct']:>7.2f}%"
                   f"  超額 {b['excess_pct']:+.2f}%")
 
-    ic = s.get("factor_ic") or {}
-    if ic:
-        print("\n逐因子 IC（該因子得分與後續報酬的相關係數，校準權重看這個）：")
-        for name, v in sorted(ic.items(), key=lambda kv: (kv[1] is None, -(kv[1] or 0))):
-            bar = "（樣本不足）" if v is None else f"{v:+.3f}"
-            print(f"  {name:<12}{bar}")
+    stats = s.get("factor_stats") or {}
+    if stats:
+        print("\n逐因子 IC（校準權重看這個，但先看最後一欄可不可信）：")
+        print(f"  {'因子':<12}{'IC':>8}{'標準差':>9}{'離散度':>9}{'集中度':>9}  判定")
+        ordered = sorted(stats.items(),
+                         key=lambda kv: (kv[1]["ic"] is None, -abs(kv[1]["ic"] or 0)))
+        for name, v in ordered:
+            ic_txt = "（不足）" if v["ic"] is None else f"{v['ic']:+.3f}"
+            verdict = "可信" if v["reliable"] else "✗ 鑑別度不足，IC 不可信"
+            print(f"  {name:<12}{ic_txt:>8}{v['std']:>9}{v['std_ratio']:>9}"
+                  f"{v['concentration_pct']:>8}%  {verdict}")
+        if any(not v["reliable"] for v in stats.values()):
+            print("  標記為「鑑別度不足」的因子，代表它對多數標的給出幾乎相同的分數，")
+            print("  IC 由少數離群值主導。該做的是修這個因子的評分邏輯，不是搬權重。")
     print()
 
     print(_pad("代號", 9) + _pad("名稱", 12) + _rpad("as_of分數", 9) + "  "
