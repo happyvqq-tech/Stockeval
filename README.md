@@ -173,7 +173,7 @@ LLM 不做任何計算、不做任何判斷，只把數字寫成人話。
 
 ## 已驗證行為
 
-`pytest tests/ -q` → 143 passed。以下每一條都有對應測試：
+`pytest tests/ -q` → 150 passed。以下每一條都有對應測試：
 
 - 美股 `p6_require_volume: true` → 量比不足時不觸發 P6（假跌破過濾）
   → `test_p6_filtered_in_us_by_volume`

@@ -23,7 +23,9 @@ python run_demo.py  —— 不需網路，改動 core/ 後必跑
 - core/indicators.py 指標
 - core/rules.py 出場規則 P6/P7/P8/P10/P11/P13/V6-2/V6-2a
   ＋嚴重度加總分級（全數停損 / 降至 50% / 降至 75% / 續抱）
-- core/recommend.py 進場評分（趨勢30/動能25/位階20/量能15/波動10）與排序
+- core/recommend.py 進場評分（趨勢30/動能25/位階20/量能15/波動10）與排序。
+  波動率是以 0.26 為峰值、對數距離的連續鐘形曲線（舊版區間內一律滿分，
+  導致因子沒有鑑別度，復盤 IC 被離群值帶走）
 - config/ markets.yaml（市場常數）＋ rules.yaml（規則門檻、評分權重）
 - data/cache.py 本地 CSV 快取（預設 12 小時，記錄請求區間避免假性失效）
 - data/universe.py ＋ config/universe/*.txt 三市場股票池
@@ -45,7 +47,7 @@ python run_demo.py  —— 不需網路，改動 core/ 後必跑
   門檻在 config/rules.yaml 的 score.ic_diagnostics）
 - docs/CALIBRATION.md 驗證與校準方法：單一 as_of 不足以調權重、生存者
   偏誤（universe 是今天的清單）、台股未還原權息的偏差、樣本外紀律
-- tests/ 143 passed，含 test_invariants.py 鐵則守門測試、test_web.py 網站層、
+- tests/ 150 passed，含 test_invariants.py 鐵則守門測試、test_web.py 網站層、
   test_auth.py 存取控制測試、test_tw_adapter.py、test_backtest.py
 
 待做：

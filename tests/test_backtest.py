@@ -395,12 +395,37 @@ def test_selected_is_whole_universe_flag(timeline_adapter):
 
 
 # ---------- 因子離散度診斷：分辨真 IC 與假 IC ----------
-def test_low_variance_factor_is_flagged_unreliable(monkeypatch):
-    """重現實際遇到的情況：volatility 對絕大多數大型股都給滿分，
-    相關係數卻高達 -0.5。那個數字是被少數幾檔離群值帶出來的，
-    不能拿來調權重 —— 必須標記成不可信。"""
+def _rows_with_factor(points: list[float], returns: list[float], weight=10):
+    """直接組出 _factor_stats 要的最小結構，不經過真實評分邏輯 ——
+    這樣測的是診斷機制本身，不依賴任何一個因子剛好壞掉。"""
+    return [
+        {"forward": {"net_return_pct": r},
+         "breakdown": [{"factor": "fake", "weight": weight, "points": p}]}
+        for p, r in zip(points, returns)
+    ]
+
+
+def test_low_variance_factor_is_flagged_unreliable():
+    """診斷機制本身：一個對多數標的給出相同分數的因子，就算 IC 很大也
+    必須標記為不可信，因為那是被少數離群值帶出來的。"""
+    from config import rules as rules_cfg
+
+    # 10 檔同分、2 檔離群 —— 離群那兩檔的報酬刻意極端，把 IC 拉到很大
+    points = [10.0] * 10 + [2.0, 2.0]
+    returns = [1.0, -1.0, 0.5, -0.5, 1.0, -1.0, 0.5, -0.5, 1.0, -1.0, 40.0, 38.0]
+    stats = bt._factor_stats(_rows_with_factor(points, returns), rules_cfg())
+
+    fake = stats["fake"]
+    assert abs(fake["ic"]) > 0.8, fake            # IC 看起來很漂亮
+    assert fake["concentration_pct"] >= 60.0, fake
+    assert fake["reliable"] is False, f"高度集中的因子應標記為不可信：{fake}"
+
+
+def test_volatility_factor_no_longer_concentrates(monkeypatch):
+    """回歸測試：這組資料（10 檔低波動 + 2 檔高波動）在改成連續評分之前，
+    volatility 的集中度是 75%、被判定為不可信 —— 因為舊版對 0.15~0.45
+    一律給滿分。改成對數鐘形曲線後，同一組資料的集中度應該大幅下降。"""
     timelines = {}
-    # 12 檔年化波動都落在 0.15~0.45 的「滿分區間」，只有 2 檔是高波動
     for i in range(12):
         vol = 0.012 if i < 10 else 0.055        # 前 10 檔低波動、後 2 檔高波動
         rng = np.random.default_rng(100 + i)
@@ -414,8 +439,9 @@ def test_low_variance_factor_is_flagged_unreliable(monkeypatch):
                       until=UNTIL)["summary"]["factor_stats"]
 
     vol_stat = stats["volatility"]
-    assert vol_stat["concentration_pct"] >= 60.0, vol_stat
-    assert vol_stat["reliable"] is False, f"高度集中的因子應標記為不可信：{vol_stat}"
+    assert vol_stat["concentration_pct"] < 40.0, \
+        f"連續評分後不該再高度集中：{vol_stat}"
+    assert vol_stat["reliable"] is True, vol_stat
 
 
 def test_well_spread_factor_is_flagged_reliable(monkeypatch):

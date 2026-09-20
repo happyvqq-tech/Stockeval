@@ -157,3 +157,68 @@ def test_cache_hit_and_fresh_fetch_crop_identically():
     cached = ad.ohlcv("2330", "2025-02-01", "2025-02-28", use_cache=True)
     assert ad.from_cache is True
     pd.testing.assert_frame_equal(fresh, cached, check_freq=False)
+
+
+# ---------- 波動率因子：連續評分 ----------
+def _vol_ratio(ann_vol):
+    """取出 volatility 因子的比例分（0~1），跳過權重換算。"""
+    from config import rules as rules_cfg
+    from core.recommend import _volatility
+
+    sc = rules_cfg()["score"]
+    return _volatility({"ann_vol": ann_vol}, sc["thresholds"], sc["unknown"])[0]
+
+
+def test_volatility_discriminates_inside_the_old_flat_band():
+    """核心修正：舊版對 0.15~0.45 一律給滿分，這個區間內的標的全部同分，
+    因子等於沒有鑑別度。現在同區間內的不同波動率必須拿到不同分數。"""
+    band = [0.15, 0.20, 0.26, 0.32, 0.38, 0.45]
+    ratios = [_vol_ratio(v) for v in band]
+    assert len(set(round(r, 3) for r in ratios)) == len(band), \
+        f"舊區間內仍有同分：{list(zip(band, ratios))}"
+
+
+def test_volatility_peaks_at_ideal_and_decays_both_ways():
+    from config import rules as rules_cfg
+
+    ideal = rules_cfg()["score"]["thresholds"]["volatility"]["ideal"]
+    peak = _vol_ratio(ideal)
+    assert peak == pytest.approx(1.0)
+    # 兩側都要遞減
+    assert _vol_ratio(ideal * 0.5) < _vol_ratio(ideal * 0.8) < peak
+    assert peak > _vol_ratio(ideal * 1.25) > _vol_ratio(ideal * 2.0)
+
+
+def test_volatility_is_symmetric_in_log_space():
+    """波動率是比值型的量：ideal 的一半與兩倍，偏離程度應該相同。"""
+    from config import rules as rules_cfg
+
+    ideal = rules_cfg()["score"]["thresholds"]["volatility"]["ideal"]
+    assert _vol_ratio(ideal / 2) == pytest.approx(_vol_ratio(ideal * 2), abs=1e-9)
+
+
+def test_volatility_penalises_both_extremes():
+    assert _vol_ratio(0.05) < 0.1        # 牛皮股，沒有操作空間
+    assert _vol_ratio(1.00) < 0.1        # 極端波動，抱不住
+
+
+def test_volatility_handles_bad_input():
+    from config import rules as rules_cfg
+    from core.recommend import _volatility
+
+    sc = rules_cfg()["score"]
+    assert _volatility({"ann_vol": None}, sc["thresholds"], 0.5)[0] == 0.5
+    assert _volatility({"ann_vol": 0.0}, sc["thresholds"], 0.5)[0] == 0.0
+    assert _volatility({"ann_vol": -0.1}, sc["thresholds"], 0.5)[0] == 0.0
+
+
+def test_volatility_curve_is_config_driven():
+    """鐵則 2：把 ideal 移到別的位置，峰值要跟著移動。"""
+    from config import rules as rules_cfg
+    from core.recommend import _volatility
+
+    cfg = rules_cfg()
+    cfg["score"]["thresholds"]["volatility"] = {"ideal": 0.60, "log_width": 0.8}
+    t = cfg["score"]["thresholds"]
+    assert _volatility({"ann_vol": 0.60}, t, 0.5)[0] == pytest.approx(1.0)
+    assert _volatility({"ann_vol": 0.26}, t, 0.5)[0] < 0.6

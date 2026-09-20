@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+import math
+
 from config import market_cfg, rules as rules_cfg
 
 
@@ -66,17 +68,33 @@ def _position(m, t, unknown) -> tuple[float, str]:
 
 
 def _volatility(m, t, unknown) -> tuple[float, str]:
-    """波動要適中：太低沒空間，太高留不住。"""
+    """波動要適中：太低沒空間，太高留不住。
+
+    連續評分，不是區間內一律滿分。舊版對年化波動 0.15~0.45 全給滿分，
+    而大型股絕大多數落在這個區間 —— 結果這個因子幾乎沒有鑑別度：復盤時
+    四分之三的標的同分，IC 被少數幾檔高波動股整個帶走，數字很大卻不可信
+    （見 docs/CALIBRATION.md）。
+
+    用對數距離的鐘形曲線。波動率是比值型的量：0.13→0.26 和 0.26→0.52
+    都是翻一倍，在對數空間才對稱；用一般的算術距離會讓高波動側被過度懲罰。
+    """
     c = t["volatility"]
     av = m.get("ann_vol")
     if av is None:
         return unknown, "波動率資料不足"
-    if av < c["too_low"]:
-        return _clamp(av / c["too_low"]) * c["low_credit"], f"年化波動 {av}，過於牛皮"
-    if av <= c["band_hi"]:
-        return 1.0, f"年化波動 {av}，適合波段"
-    span = c["zero_at"] - c["band_hi"]
-    return _clamp(1 - (av - c["band_hi"]) / span), f"年化波動 {av}，偏高需縮小部位"
+    if av <= 0:
+        return 0.0, f"年化波動 {av}，資料異常"
+
+    ideal, width = c["ideal"], c["log_width"]
+    ratio = math.exp(-((math.log(av / ideal) / width) ** 2))
+
+    if av < ideal:
+        desc = f"年化波動 {av}，低於理想 {ideal}，空間偏小"
+    elif av > ideal:
+        desc = f"年化波動 {av}，高於理想 {ideal}，需縮小部位"
+    else:
+        desc = f"年化波動 {av}，正好在理想值"
+    return ratio, desc
 
 
 _FACTORS = {
