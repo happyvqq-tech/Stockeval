@@ -25,7 +25,7 @@ from datetime import date, timedelta
 from config import market_cfg
 from core.indicators import compute
 from core.recommend import score
-from data.base import get_adapter
+from data.base import QuotaExceeded, get_adapter
 
 # 抓多少天的歷史來算 as_of 當天的指標。這不是規則門檻（鐵則 2 管的是判斷
 # 用的數值），只是「要抓多少資料」的視窗大小，跟 cli.py／web/logic.py
@@ -65,6 +65,8 @@ def snapshot(market: str, symbols: list[str], *, asof,
             m = compute(df, symbol=sym, market=market)
             s = score(m)
             ranked.append(s)
+        except QuotaExceeded:
+            raise                     # 額度用完：剩下的必定同樣失敗，別再打
         except Exception as e:
             failed.append({"symbol": sym, "error": str(e)})
 
@@ -140,6 +142,40 @@ def _factor_ic(rows: list[dict]) -> dict[str, float | None]:
     }
 
 
+def _score_buckets(universe: list[dict], bench_avg: float | None) -> list[dict]:
+    """依分數由高到低切成幾等分，看每一組的平均報酬。
+
+    這是判斷排序有沒有用的主要依據，比「選股組合 vs 基準」更耐看：
+    top 留空時選股組合就是整池，超額報酬必然是 0，什麼都看不出來。
+    分組報酬如果從高分到低分單調遞減，排序才是真的有效；如果忽高忽低，
+    那只是雜訊剛好讓某一組好看。
+
+    universe 已依分數由高到低排序。
+    """
+    n = len(universe)
+    k = min(5, n // 3)              # 每組至少 3 檔，否則單一檔就能主導整組
+    if k < 2:
+        return []
+
+    returns = [r["forward"]["net_return_pct"] for r in universe]
+    size, rest = divmod(n, k)
+    buckets, start = [], 0
+    for i in range(k):
+        # 前 rest 組各多分一檔，確保所有標的都被分到組裡
+        end = start + size + (1 if i < rest else 0)
+        chunk = returns[start:end]
+        avg = sum(chunk) / len(chunk)
+        buckets.append({
+            "label": f"Q{i + 1}",
+            "n": len(chunk),
+            "score_range": [universe[end - 1]["score"], universe[start]["score"]],
+            "avg_return_pct": round(avg, 2),
+            "excess_pct": round(avg - bench_avg, 2) if bench_avg is not None else None,
+        })
+        start = end
+    return buckets
+
+
 def _summarize(selected: list[dict], universe: list[dict]) -> dict:
     """selected：實際「選出來」的那批（有 top 就是前 N 檔）。
     universe：所有算得出前後報酬的標的，當作對照基準。
@@ -174,8 +210,12 @@ def _summarize(selected: list[dict], universe: list[dict]) -> dict:
         "benchmark_n": len(bench_returns),
         "benchmark_avg_return_pct": round(bench_avg, 2) if bench_avg is not None else None,
         "excess_return_pct": round(avg - bench_avg, 2) if bench_avg is not None else None,
-        # 逐因子 IC 用整池算，樣本比較多
+        # selected 就是整池時，超額報酬必然為 0，不是「評分沒用」的意思。
+        # 顯示層要靠這個旗標避免誤導。
+        "selected_is_whole_universe": len(returns) == len(bench_returns),
+        # 逐因子 IC 與分位數分組都用整池算，樣本比較多
         "factor_ic": _factor_ic(universe) if universe else {},
+        "score_buckets": _score_buckets(universe, bench_avg),
     }
     return out
 

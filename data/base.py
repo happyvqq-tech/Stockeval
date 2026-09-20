@@ -23,6 +23,15 @@ from . import cache
 COLUMNS = ["open", "high", "low", "close", "volume"]
 
 
+class QuotaExceeded(RuntimeError):
+    """資料來源的額度／配額用完了（例如 FinMind 免費層回 402）。
+
+    跟「這一檔抓不到」不同：額度是帳號層級的，剩下的標的必定同樣失敗。
+    批次處理的迴圈看到這個例外要直接中止整批，不要逐檔重試 —— 繼續打
+    只會更慢，而且把額度燒得更乾淨。
+    """
+
+
 def _as_date(x) -> date:
     if x is None:
         return date.today()

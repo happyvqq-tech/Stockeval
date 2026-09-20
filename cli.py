@@ -22,6 +22,7 @@ from datetime import date, timedelta
 from core.indicators import compute
 from core.recommend import rank, score
 from core.rules import evaluate
+from data.base import QuotaExceeded
 
 BAR = "─" * 68
 
@@ -85,6 +86,9 @@ def cmd_rec(a) -> int:
             df = _load(ad, sym, start, a.no_cache)
             metrics.append(compute(df, symbol=sym, market=a.market))
             cached += bool(getattr(ad, "from_cache", False))
+        except QuotaExceeded as e:              # 額度用完：剩下的必定也失敗
+            _err(f"\n中止：{e}")
+            return 1
         except Exception as e:                  # 單一標的失敗不中斷整批
             failed.append({"symbol": sym, "error": str(e)})
 
@@ -189,6 +193,9 @@ def cmd_review(a) -> int:
     try:
         out = review(a.market, symbols, asof=a.asof, until=a.until,
                      top=a.top, on_progress=progress)
+    except QuotaExceeded as e:
+        _err(f"中止：{e}")
+        return 1
     except ValueError as e:
         _err(f"錯誤：{e}")
         return 1
@@ -210,12 +217,25 @@ def cmd_review(a) -> int:
 
     bench, excess = s["benchmark_avg_return_pct"], s["excess_return_pct"]
     if bench is not None:
-        verdict = "勝過" if excess > 0 else ("輸給" if excess < 0 else "等於")
-        print(f"對照基準（整池 {s['benchmark_n']} 檔等權、完全不選股）{bench}%"
-              f"　→ 超額報酬 {excess:+.2f}%（{verdict}不選股）")
+        print(f"對照基準（整池 {s['benchmark_n']} 檔等權、完全不選股）{bench}%")
+        if s.get("selected_is_whole_universe"):
+            print("  （沒有指定 --top，選股組合就是整池，超額報酬必然為 0，"
+                  "請看下面的分位數分組）")
+        else:
+            verdict = "勝過" if excess > 0 else ("輸給" if excess < 0 else "等於")
+            print(f"  → 超額報酬 {excess:+.2f}%（{verdict}不選股）")
     print(f"分數前半平均報酬 {s['avg_return_top_half_pct']}%"
           f"　分數後半平均報酬 {s['avg_return_bottom_half_pct']}%")
     print(f"評分與後續報酬相關係數：{corr if corr is not None else '（樣本不足，無法計算）'}")
+
+    buckets = s.get("score_buckets") or []
+    if buckets:
+        print("\n依分數分組（由高到低，報酬單調遞減才代表排序真的有效）：")
+        for b in buckets:
+            lo, hi = b["score_range"]
+            print(f"  {b['label']}  {b['n']:>2} 檔  分數 {lo:>5}~{hi:<5}"
+                  f"  平均報酬 {b['avg_return_pct']:>7.2f}%"
+                  f"  超額 {b['excess_pct']:+.2f}%")
 
     ic = s.get("factor_ic") or {}
     if ic:

@@ -11,7 +11,7 @@ from datetime import date, timedelta
 from core.indicators import compute, is_limit_down
 from core.recommend import rank, score
 from core.rules import evaluate
-from data.base import get_adapter
+from data.base import QuotaExceeded, get_adapter
 
 
 def default_start() -> str:
@@ -62,6 +62,8 @@ def run_scan(market: str, symbols: list[str], *, top=None, min_score: float = 0.
             if not ad.adjusted:
                 any_unadjusted = True          # 記錄整批中「有沒有任何一檔」未還原權息
             metrics.append(compute(df, symbol=sym, market=market))
+        except QuotaExceeded:
+            raise                     # 額度用完：整批中止，讓使用者看到原因
         except Exception as e:
             failed.append({"symbol": sym, "error": str(e)})
         if on_progress:

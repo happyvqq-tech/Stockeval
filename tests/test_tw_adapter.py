@@ -92,3 +92,49 @@ def test_both_datasets_failing_raises_from_second_call():
          patch("data.tw.time.sleep"):
         with pytest.raises(requests.HTTPError):
             ad.ohlcv("2330", "2025-01-01", "2025-03-31")
+
+
+# ---------- 額度用盡（402）：實際部署上發生過 ----------
+def test_quota_error_raises_quota_exceeded():
+    """402 是帳號層級的額度用完，不是「這個資料集沒權限」。
+    退回另一個資料集也一定失敗，所以要丟出可辨識的例外讓整批中止。"""
+    from data.base import QuotaExceeded
+
+    ad = TaiwanAdapter(token="")
+    with patch("data.tw.requests.get", side_effect=[_resp(402)]) as mock_get, \
+         patch("data.tw.time.sleep"):
+        with pytest.raises(QuotaExceeded, match="402"):
+            ad.ohlcv("2330", "2025-01-01", "2025-03-31")
+    assert mock_get.call_count == 1, "402 之後不該再打退回資料集，那只會多燒額度"
+
+
+def test_quota_error_on_fallback_dataset_also_raises():
+    from data.base import QuotaExceeded
+
+    ad = TaiwanAdapter(token="")
+    with patch("data.tw.requests.get", side_effect=[_resp(403), _resp(402)]), \
+         patch("data.tw.time.sleep"):
+        with pytest.raises(QuotaExceeded):
+            ad.ohlcv("2330", "2025-01-01", "2025-03-31")
+
+
+def test_adj_unavailability_is_remembered_across_symbols():
+    """關鍵效率修正：確認沒權限之後，後續標的不該再白打一次 Adj。
+
+    不記住的話，掃 40 檔要打 80 次請求（每檔都先試一次注定失敗的 Adj），
+    免費額度很快就爆 —— 這正是台股復盤整批 402 失敗的原因之一。
+    """
+    ad = TaiwanAdapter(token="")
+    responses = [
+        _resp(403),                                   # 第 1 檔：Adj 沒權限
+        _resp(200, {"data": _plain_price_rows()}),    # 第 1 檔：退回未還原
+        _resp(200, {"data": _plain_price_rows()}),    # 第 2 檔：直接用未還原
+        _resp(200, {"data": _plain_price_rows()}),    # 第 3 檔：直接用未還原
+    ]
+    with patch("data.tw.requests.get", side_effect=responses) as mock_get, \
+         patch("data.tw.time.sleep"):
+        for sym in ("2330", "2317", "2454"):
+            assert len(ad.ohlcv(sym, "2025-01-01", "2025-03-31")) == 65
+
+    assert mock_get.call_count == 4, "三檔應該只打 4 次（第一檔試 2 次，之後各 1 次）"
+    assert ad.adjusted is False

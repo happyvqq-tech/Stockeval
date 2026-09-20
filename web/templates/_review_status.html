@@ -55,10 +55,15 @@
     {% else %}bg-slate-50 border-slate-300 text-slate-700{% endif %}">
     對照基準：整池 {{ s.benchmark_n }} 檔等權、完全不選股 →
     <span class="font-semibold">{{ s.benchmark_avg_return_pct }}%</span>
+    {% if s.selected_is_whole_universe %}
+    　<span class="text-slate-600">沒有指定「只看前 N 檔」，選股組合就是整池，
+      超額報酬必然為 0 —— 請看下面的分位數分組</span>
+    {% else %}
     　超額報酬 <span class="font-semibold">{{ "%+.2f"|format(s.excess_return_pct) }}%</span>
     {% if s.excess_return_pct > 0 %}（選股勝過不選股）
     {% elif s.excess_return_pct < 0 %}（⚠ 選股輸給不選股，這批樣本上評分是負貢獻）
     {% else %}（與不選股相同）{% endif %}
+    {% endif %}
   </div>
   {% endif %}
 
@@ -71,6 +76,46 @@
       —— ⚠ 高分反而表現較差，這批樣本上評分排序沒有預測力
     {% endif %}
   </div>
+
+  {% if s.score_buckets %}
+  <div class="bg-slate-50 rounded p-3 mb-4">
+    <div class="text-xs text-slate-500 mb-2">
+      依分數分組（Q1 = 分數最高的一組）——
+      報酬由 Q1 到 Q5 單調遞減，才代表排序真的有效；忽高忽低就是雜訊
+    </div>
+    <table class="w-full text-xs">
+      <thead>
+        <tr class="text-left text-slate-500">
+          <th class="py-1 pr-2 font-medium">組別</th>
+          <th class="py-1 pr-2 font-medium">檔數</th>
+          <th class="py-1 pr-2 font-medium">分數區間</th>
+          <th class="py-1 pr-2 font-medium text-right">平均報酬</th>
+          <th class="py-1 pr-2 font-medium text-right">超額</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in s.score_buckets %}
+        <tr class="border-t border-slate-200">
+          <td class="py-1 pr-2 font-medium">{{ b.label }}</td>
+          <td class="py-1 pr-2">{{ b.n }}</td>
+          <td class="py-1 pr-2 font-mono text-slate-500">
+            {{ b.score_range[0] }}~{{ b.score_range[1] }}
+          </td>
+          <td class="py-1 pr-2 text-right font-semibold
+            {% if b.avg_return_pct >= 0 %}text-emerald-600{% else %}text-red-600{% endif %}">
+            {{ b.avg_return_pct }}%
+          </td>
+          <td class="py-1 pr-2 text-right font-mono
+            {% if b.excess_pct > 0 %}text-emerald-600{% elif b.excess_pct < 0 %}text-red-600
+            {% else %}text-slate-500{% endif %}">
+            {{ "%+.2f"|format(b.excess_pct) }}%
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
 
   {% if s.factor_ic %}
   <div class="bg-slate-50 rounded p-3 mb-4">

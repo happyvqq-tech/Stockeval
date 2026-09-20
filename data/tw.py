@@ -17,7 +17,7 @@ from datetime import date
 import pandas as pd
 import requests
 
-from .base import MarketAdapter
+from .base import MarketAdapter, QuotaExceeded
 
 API = "https://api.finmindtrade.com/api/v4/data"
 
@@ -26,10 +26,18 @@ class TaiwanAdapter(MarketAdapter):
     market = "TW"
     settlement = "T+0"
 
+    # FinMind 用 402 表達「額度用完／需要付費」。這跟 400/401/403（單純
+    # 沒有這個資料集的權限）要分開處理：前者整個帳號都沒得用了，後者只是
+    # 該換一個資料集。
+    QUOTA_STATUS = 402
+
     def __init__(self, token: str | None = None, sleep: float = 0.3):
         self.token = token or os.getenv("FINMIND_TOKEN", "")
         self.sleep = sleep
         self.adjusted = True
+        # 一旦確認這個 token 拿不到還原股價，就別再試了。不記住的話每一檔
+        # 都會先打一次注定失敗的 Adj，請求數直接翻倍，免費額度很快就燒完。
+        self._adj_available = True
 
     def _get(self, dataset: str, symbol: str, start: date, end: date) -> pd.DataFrame:
         params = {
@@ -46,17 +54,39 @@ class TaiwanAdapter(MarketAdapter):
         payload = r.json()
         return pd.DataFrame(payload.get("data", []))
 
+    def _status_of(self, err: requests.HTTPError) -> int | None:
+        return err.response.status_code if err.response is not None else None
+
     def _fetch(self, symbol: str, start: date, end: date) -> pd.DataFrame:
-        try:
-            raw = self._get("TaiwanStockPriceAdj", symbol, start, end)
-        except requests.HTTPError:
-            # 免費 token 對 TaiwanStockPriceAdj 通常沒有存取權限，FinMind 對此
-            # 回 400（而不是空結果），所以要在這裡接住，才走得到下面「退回未
-            # 還原股價」那條路 —— 這正是本檔案開頭說明的行為，之前漏接了。
-            raw = pd.DataFrame()
+        raw = pd.DataFrame()
+
+        if self._adj_available:
+            try:
+                raw = self._get("TaiwanStockPriceAdj", symbol, start, end)
+            except requests.HTTPError as e:
+                if self._status_of(e) == self.QUOTA_STATUS:
+                    raise QuotaExceeded(
+                        "FinMind 額度已用完（402）。免費層額度有限，"
+                        "請稍後再試、減少一次查詢的檔數，或設定贊助會員 "
+                        "FINMIND_TOKEN。"
+                    ) from e
+                # 免費 token 對 TaiwanStockPriceAdj 沒有存取權限時，FinMind 回
+                # 4xx 而不是空結果，要在這裡接住才走得到下面的退回邏輯。
+                # 記住這個結果，後面的標的就不用再白打一次。
+                self._adj_available = False
+                self.adjusted = False
 
         if raw.empty:
-            raw = self._get("TaiwanStockPrice", symbol, start, end)
+            try:
+                raw = self._get("TaiwanStockPrice", symbol, start, end)
+            except requests.HTTPError as e:
+                if self._status_of(e) == self.QUOTA_STATUS:
+                    raise QuotaExceeded(
+                        "FinMind 額度已用完（402）。免費層額度有限，"
+                        "請稍後再試、減少一次查詢的檔數，或設定贊助會員 "
+                        "FINMIND_TOKEN。"
+                    ) from e
+                raise
             self.adjusted = False
 
         if raw.empty:

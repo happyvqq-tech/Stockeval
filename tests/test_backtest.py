@@ -317,3 +317,76 @@ def test_factor_ic_empty_when_no_priced_rows(monkeypatch):
     monkeypatch.setattr("core.backtest.get_adapter", lambda market, **kw: ad)
     out = bt.review("TW", ["NOPE"], asof=ASOF, until=UNTIL)
     assert out["summary"] == {"n": 0}
+
+
+def test_quota_exceeded_aborts_whole_batch(monkeypatch):
+    """額度用完時整批中止，不要對剩下 39 檔重複撞同一面牆。"""
+    from data.base import QuotaExceeded
+
+    attempted = []
+
+    class QuotaAdapter(MarketAdapter):
+        market = "TW"
+
+        def _fetch(self, symbol, start, end):
+            return pd.DataFrame()
+
+        def ohlcv(self, symbol, start, end=None, **kwargs):
+            attempted.append(symbol)
+            raise QuotaExceeded("額度用完")
+
+    monkeypatch.setattr("core.backtest.get_adapter", lambda market, **kw: QuotaAdapter())
+    with pytest.raises(QuotaExceeded):
+        bt.snapshot("TW", ["A", "B", "C", "D"], asof=ASOF)
+    assert attempted == ["A"], f"應該第一檔就中止，實際試了 {attempted}"
+
+
+# ---------- 分位數分組 ----------
+def _many_symbol_adapter(n_symbols=15, *, monotonic=True):
+    """建立 n 檔標的：monotonic=True 時 as_of 分數越高、之後報酬越高。"""
+    timelines = {}
+    for i in range(n_symbols):
+        slope_before = 0.30 - i * 0.04          # 由強到弱
+        slope_after = slope_before if monotonic else (0.30 - ((i * 7) % n_symbols) * 0.04)
+        before = 100 * np.exp(np.linspace(0, slope_before, 150))
+        after = before[-1] * np.exp(np.linspace(0, slope_after, 60))
+        timelines[f"S{i:02d}"] = _series(np.concatenate([before, after]))
+    return TimelineAdapter(timelines)
+
+
+def test_score_buckets_split_whole_universe(monkeypatch):
+    ad = _many_symbol_adapter(15)
+    monkeypatch.setattr("core.backtest.get_adapter", lambda market, **kw: ad)
+    out = bt.review("TW", list(ad.timelines), asof=ASOF, until=UNTIL)
+    buckets = out["summary"]["score_buckets"]
+
+    assert [b["label"] for b in buckets] == ["Q1", "Q2", "Q3", "Q4", "Q5"]
+    assert sum(b["n"] for b in buckets) == 15       # 每一檔都要被分到組
+    assert all(b["excess_pct"] is not None for b in buckets)
+
+
+def test_score_buckets_are_monotonic_when_ranking_works(monkeypatch):
+    """排序有效時，分組報酬應該由高分到低分遞減 —— 這是比單一相關係數
+    更耐看的判準。"""
+    ad = _many_symbol_adapter(15, monotonic=True)
+    monkeypatch.setattr("core.backtest.get_adapter", lambda market, **kw: ad)
+    buckets = bt.review("TW", list(ad.timelines), asof=ASOF,
+                        until=UNTIL)["summary"]["score_buckets"]
+    returns = [b["avg_return_pct"] for b in buckets]
+    assert returns == sorted(returns, reverse=True), f"分組報酬不單調：{returns}"
+    assert buckets[0]["excess_pct"] > 0 > buckets[-1]["excess_pct"]
+
+
+def test_score_buckets_empty_when_too_few_symbols(timeline_adapter):
+    """只有三檔時切不出有意義的分組，寧可不給，也不要拿單一檔當一組。"""
+    out = bt.review("TW", ["UP", "DOWN", "FLAT_RISE"], asof=ASOF, until=UNTIL)
+    assert out["summary"]["score_buckets"] == []
+
+
+def test_selected_is_whole_universe_flag(timeline_adapter):
+    """top 留空時超額報酬必然是 0，要有旗標讓顯示層不要誤導成「評分沒用」。"""
+    whole = bt.review("TW", ["UP", "DOWN", "FLAT_RISE"], asof=ASOF, until=UNTIL)
+    assert whole["summary"]["selected_is_whole_universe"] is True
+
+    subset = bt.review("TW", ["UP", "DOWN", "FLAT_RISE"], asof=ASOF, until=UNTIL, top=1)
+    assert subset["summary"]["selected_is_whole_universe"] is False
