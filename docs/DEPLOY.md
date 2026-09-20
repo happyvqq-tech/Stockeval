@@ -52,9 +52,15 @@ Render 的話兩種方式都行：
   健康檢查路徑，你只要填兩個密碼欄位
 - **New > Web Service**，手動選 Docker、Free 方案、Singapore 區域
 
-容器裝的是 `requirements-web.txt`（精簡版），不含 `pytest` 與 `akshare`，
-建置比較快、映像檔比較小。**要在部署版用 A 股**，把 `requirements-web.txt`
-裡 `akshare` 那行取消註解再重新部署。
+容器裝的是 `requirements-web.txt`，不含 `pytest`（只有測試要用）。
+
+**A 股（akshare）很重**：實測會拉進 32 個相依套件、site-packages 約 299MB、
+import 時吃約 100MB RSS。免費方案 512MB 記憶體塞得下（app 本身約 150MB），
+但沒什麼餘裕，建置時間也會明顯拉長。用不到 A 股的話，把
+`requirements-web.txt` 裡的 `akshare` 註解掉，建置會快很多。
+
+註解掉之後如果還是去查 A 股，網頁會顯示「A 股資料需要 akshare 套件，
+這個環境沒有安裝」並告訴你怎麼修，不會丟出原始的 Python 錯誤。
 
 容器的啟動指令已經寫在 `Dockerfile` 裡：
 

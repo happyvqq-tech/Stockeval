@@ -23,6 +23,14 @@ from . import cache
 COLUMNS = ["open", "high", "low", "close", "volume"]
 
 
+class MissingDependency(RuntimeError):
+    """這個市場的資料來源需要的套件沒有安裝。
+
+    跟一般錯誤分開，是因為使用者看到原始的 ModuleNotFoundError
+    （例如 "No module named 'akshare'"）完全不知道該做什麼。
+    """
+
+
 class QuotaExceeded(RuntimeError):
     """資料來源的額度／配額用完了（例如 FinMind 免費層回 402）。
 

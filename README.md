@@ -121,8 +121,9 @@ python -m web
 `Dockerfile` 可直接丟給任何吃 Docker 的 PaaS（建議 Render，`render.yaml` 已備好）。
 完整步驟見 **[docs/DEPLOY.md](docs/DEPLOY.md)**。
 
-容器裝的是 `requirements-web.txt`，不含 `pytest` 與 `akshare`（A 股要用的話
-把該行取消註解）。
+容器裝的是 `requirements-web.txt`。`akshare`（A 股）很重 —— 約 299MB、
+32 個相依、import 吃 100MB RSS，用不到就註解掉可以大幅加快建置。
+缺套件時會顯示可行動的說明，不是原始的 Python 錯誤。
 
 存取控制是 fail closed：**沒設 `STOCKCORE_PASSWORD`（至少 8 字元）就整個服務
 回 503**，不會有「預設開放」的狀態。設了之後用 HTTP Basic 驗證，帳號不檢查、
@@ -173,7 +174,7 @@ LLM 不做任何計算、不做任何判斷，只把數字寫成人話。
 
 ## 已驗證行為
 
-`pytest tests/ -q` → 150 passed。以下每一條都有對應測試：
+`pytest tests/ -q` → 154 passed。以下每一條都有對應測試：
 
 - 美股 `p6_require_volume: true` → 量比不足時不觸發 P6（假跌破過濾）
   → `test_p6_filtered_in_us_by_volume`

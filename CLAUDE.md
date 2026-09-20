@@ -36,6 +36,8 @@ python run_demo.py  —— 不需網路，改動 core/ 後必跑
   與 data/，不重複計算
 - web/auth.py 存取控制，fail closed：沒設 STOCKCORE_PASSWORD 就整個回 503。
   另有速率限制，擋在驗證之前。/healthz 是唯一免驗證端點
+- 缺少市場相依套件時丟 data.base.MissingDependency，訊息說明本機與部署版
+  各自怎麼修，不把原始 ModuleNotFoundError 丟給使用者
 - Dockerfile ＋ docs/DEPLOY.md 可部署到任何吃 Docker 的 PaaS。
   python -m web 是本機模式（127.0.0.1 ＋ LOCAL_ONLY），不可用於對外部署
 - core/backtest.py：復盤 ——「用 as_of 之前的資料算推薦，比對之後到 until
@@ -47,7 +49,7 @@ python run_demo.py  —— 不需網路，改動 core/ 後必跑
   門檻在 config/rules.yaml 的 score.ic_diagnostics）
 - docs/CALIBRATION.md 驗證與校準方法：單一 as_of 不足以調權重、生存者
   偏誤（universe 是今天的清單）、台股未還原權息的偏差、樣本外紀律
-- tests/ 150 passed，含 test_invariants.py 鐵則守門測試、test_web.py 網站層、
+- tests/ 154 passed，含 test_invariants.py 鐵則守門測試、test_web.py 網站層、
   test_auth.py 存取控制測試、test_tw_adapter.py、test_backtest.py
 
 待做：

@@ -13,5 +13,6 @@ python-multipart>=0.0.9
 requests>=2.31      # 台股 FinMind
 yfinance>=0.2.40    # 美股
 
-# 要在部署版用 A 股就把下面這行取消註解（會讓映像檔大上不少）
-# akshare>=1.14
+# A 股。很重：實測拉進 32 個套件、site-packages 約 299MB，import 時吃
+# 約 100MB RSS。用不到 A 股的話註解掉，建置會快很多、記憶體也寬鬆。
+akshare>=1.14

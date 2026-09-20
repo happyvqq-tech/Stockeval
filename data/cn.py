@@ -15,7 +15,25 @@ from datetime import date
 
 import pandas as pd
 
-from .base import MarketAdapter
+from .base import MarketAdapter, MissingDependency
+
+
+def _akshare():
+    """延遲匯入 akshare，並把原始的 ModuleNotFoundError 換成看得懂的說明。
+
+    使用者在網頁上看到 "No module named 'akshare'" 完全不知道該做什麼；
+    這個套件很重（約 299MB、拉進 32 個相依），所以部署時可能被刻意拿掉。
+    """
+    try:
+        import akshare as ak
+    except ImportError as e:
+        raise MissingDependency(
+            "A 股資料需要 akshare 套件，這個環境沒有安裝。\n"
+            "本機：pip install akshare\n"
+            "部署版：把 requirements-web.txt 裡的 akshare 取消註解後重新部署"
+            "（會讓映像檔大上約 300MB）。"
+        ) from e
+    return ak
 
 
 def board_of(symbol: str) -> str:
@@ -42,7 +60,7 @@ class ChinaAdapter(MarketAdapter):
         self.exclude_st = exclude_st
 
     def _fetch(self, symbol: str, start: date, end: date) -> pd.DataFrame:
-        import akshare as ak
+        ak = _akshare()
 
         code = re.sub(r"\D", "", symbol)[-6:]
 
@@ -74,8 +92,7 @@ class ChinaAdapter(MarketAdapter):
     # ---------- A 股專屬 ----------
     def _is_st(self, code: str) -> bool:
         try:
-            import akshare as ak
-
+            ak = _akshare()
             spot = ak.stock_zh_a_spot_em()
             row = spot[spot["代码"] == code]
             if row.empty:
@@ -90,7 +107,7 @@ class ChinaAdapter(MarketAdapter):
 
     def chips(self, symbol: str, start: date, end: date) -> pd.DataFrame:
         """融資融券餘額。對應你框架 S2 的「融資逆勢連 3 增」。"""
-        import akshare as ak
+        ak = _akshare()
 
         code = re.sub(r"\D", "", symbol)[-6:]
         market = "sh" if code.startswith("6") else "sz"

@@ -14,7 +14,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-from .base import MarketAdapter
+from .base import MarketAdapter, MissingDependency
 
 
 class USAdapter(MarketAdapter):
@@ -25,7 +25,14 @@ class USAdapter(MarketAdapter):
     def _fetch(self, symbol: str, start: date, end: date) -> pd.DataFrame:
         import logging
 
-        import yfinance as yf
+        try:
+            import yfinance as yf
+        except ImportError as e:
+            raise MissingDependency(
+                "美股資料需要 yfinance 套件，這個環境沒有安裝。\n"
+                "本機：pip install yfinance\n"
+                "部署版：確認 requirements-web.txt 有列 yfinance。"
+            ) from e
 
         # yfinance 會把連線錯誤印成一大段雜訊蓋掉呼叫端的輸出，這裡壓掉；
         # 真正的失敗由上層看「回傳幾筆」來判斷。
