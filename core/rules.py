@@ -11,9 +11,11 @@
 from __future__ import annotations
 
 from config import market_cfg, rules as rules_cfg
+from core import risk
 
 # 規則代號 → 中文名。改名不影響邏輯，只影響輸出可讀性。
 NAMES = {
+    "P0": "硬性停損",
     "P6": "黑K跌破20MA",
     "P7": "爆量下跌",
     "P8": "連續收在20MA之下",
@@ -55,6 +57,19 @@ def evaluate(
 
     results: list[dict] = []
     notes: list[str] = []
+
+    # ---------- P0 硬性停損（虧損超過可承受範圍）----------
+    # 放第一條是刻意的：其他規則看的都是「技術面相對位置」（相對 20MA、
+    # 相對 60 日高點），沒有一條看得到你的成本。60 日高點不是你的買進價 ——
+    # 在半山腰接刀的話，跌掉三成也可能沒有任何規則會叫。
+    max_loss = risk.max_loss_pct(m.get("ann_vol"), cfg=r)
+    p0 = unrealized_pct <= -max_loss
+    results.append(_hit(
+        "P0", p0,
+        f"未實現 {unrealized_pct}%，"
+        + (f"已跌破停損線 -{max_loss:.1f}%" if p0 else f"停損線 -{max_loss:.1f}%")
+        + f"（依年化波動 {m.get('ann_vol')} 換算）",
+        r["stop"]["severity"]))
 
     # ---------- P6 黑K跌破 20MA ----------
     c = r["p6"]
@@ -177,6 +192,13 @@ def evaluate(
         notes.append(
             "原始資料未還原權息：除權息日的價格跳空會被誤判為跌破均線，"
             "本次所有價格類規則（P6/P8/P10/P11）結果不可信。"
+        )
+    if p0:
+        notes.append(
+            f"已跌破停損線：可承受虧損 -{max_loss:.1f}% 是用年化波動 "
+            f"{m.get('ann_vol')} 換算的（{r['stop']['vol_sigma']} 個日標準差，"
+            f"夾在 -{r['stop']['min_loss_pct']}% ~ -{r['stop']['max_loss_pct']}% 之間）。"
+            "停損的意義在於執行，不在於再等一根 K 棒。"
         )
     if action != "HOLD":
         notes.append(

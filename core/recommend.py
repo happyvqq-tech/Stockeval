@@ -13,6 +13,7 @@ from __future__ import annotations
 import math
 
 from config import market_cfg, rules as rules_cfg
+from core import risk
 
 
 def _clamp(x, lo=0.0, hi=1.0):
@@ -108,7 +109,8 @@ _FACTORS = {
 
 def score(m: dict, *, cfg: dict | None = None) -> dict:
     """單一標的的進場評分。輸入同樣是 indicators.compute() 的輸出。"""
-    sc = (rules_cfg() if cfg is None else cfg)["score"]
+    full = rules_cfg() if cfg is None else cfg
+    sc = full["score"]
     t, unknown = sc["thresholds"], sc["unknown"]
     mkt = market_cfg(m["market"])
 
@@ -137,19 +139,20 @@ def score(m: dict, *, cfg: dict | None = None) -> dict:
 
     e = sc["entry"]
     close = m["close"]
-    floor = close * (1 - e["stop_max_loss_pct"] / 100)
-    ma20 = m.get("ma20") or floor
-    stop = round(min(ma20, floor), 2)              # 停損取 20MA 與最大容忍虧損較低者
-    risk = (close - stop) / close if close else 0
-    target = round(close * (1 + e["reward_risk"] * risk), 2)
+    # 停損價與出場端的 P0 共用 core/risk.py 的同一把尺，兩邊不會再各說各話
+    stop, max_loss = risk.stop_price(close, m.get("ann_vol"), cfg=full)
+    risk_ratio = (close - stop) / close if close else 0
+    target = round(close * (1 + e["reward_risk"] * risk_ratio), 2)
 
     notes = []
     if penalty:
         notes.append(f"{mkt['name']}來回成本 {mkt['cost_bps']}bps，評分已扣 {penalty} 分")
     if mkt["settlement"] != "T+0":
         notes.append(f"{mkt['settlement']} 交割：當日買進無法當日停損")
-    if risk * 100 > e["risk_warn_pct"]:
-        notes.append(f"停損距離 {risk * 100:.1f}%，單筆風險偏大，部位需縮小")
+    if risk_ratio * 100 > e["risk_warn_pct"]:
+        notes.append(f"停損距離 {risk_ratio * 100:.1f}%，單筆風險偏大，部位需縮小")
+    notes.append(f"可承受虧損 -{max_loss:.1f}%（依年化波動 {m.get('ann_vol')} 換算）；"
+                 f"跌破這條線時個股檢查的 P0 會要求出場")
 
     return {
         "symbol": m.get("symbol", ""),
@@ -164,7 +167,8 @@ def score(m: dict, *, cfg: dict | None = None) -> dict:
         "entry": close,
         "stop": stop,
         "target": target,
-        "risk_pct": round(risk * 100, 2),
+        "risk_pct": round(risk_ratio * 100, 2),
+        "max_loss_pct": round(max_loss, 2),
         "notes": notes,
     }
 

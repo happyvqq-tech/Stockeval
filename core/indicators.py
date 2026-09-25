@@ -63,7 +63,8 @@ def compute(df: pd.DataFrame, *, symbol: str = "", market: str = "") -> dict:
             break
 
     # --- 近 60 日高點回撤 (V6-2) ---
-    high_60 = c.iloc[-60:].max()
+    # 用盤中最高價而不是收盤價：真實的回撤是從最高點算起，用收盤價會低估。
+    high_60 = h.iloc[-60:].max()
 
     # --- 年化波動率（判定是否為高波動成長股，觸發 V6-2a）---
     ret = c.pct_change().dropna()

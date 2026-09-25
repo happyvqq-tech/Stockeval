@@ -21,7 +21,12 @@ python run_demo.py  —— 不需網路，改動 core/ 後必跑
 - data/base.py 統一 OHLCV 格式與 normalize（排序、去重、剔除停牌日）
 - 三市場 adapter：TW FinMind、US yfinance、CN AkShare
 - core/indicators.py 指標
-- core/rules.py 出場規則 P6/P7/P8/P10/P11/P13/V6-2/V6-2a
+- core/risk.py 單筆部位的風險尺度：停損距離 = N 個日標準差，夾在上下限
+  之間。進場算停損價、出場判斷該不該認賠共用這一把尺（設定在
+  config/rules.yaml 頂層 stop:）
+- core/rules.py 出場規則 P0/P6/P7/P8/P10/P11/P13/V6-2/V6-2a
+  （P0 = 硬性停損，虧損超過可承受範圍；severity 4，單獨觸發即全數出場。
+  在它之前，七條規則全是技術面相對位置，沒有一條看得到成本價）
   ＋嚴重度加總分級（全數停損 / 降至 50% / 降至 75% / 續抱）
 - core/recommend.py 進場評分（趨勢30/動能25/位階20/量能15/波動10）與排序。
   波動率是以 0.26 為峰值、對數距離的連續鐘形曲線（舊版區間內一律滿分，
@@ -51,7 +56,7 @@ python run_demo.py  —— 不需網路，改動 core/ 後必跑
   中文全形字當標題貼到別處會對不齊）
 - docs/CALIBRATION.md 驗證與校準方法：單一 as_of 不足以調權重、生存者
   偏誤（universe 是今天的清單）、台股未還原權息的偏差、樣本外紀律
-- tests/ 164 passed，含 test_invariants.py 鐵則守門測試、test_web.py 網站層、
+- tests/ 179 passed，含 test_invariants.py 鐵則守門測試、test_web.py 網站層、
   test_auth.py 存取控制測試、test_tw_adapter.py、test_backtest.py
 
 待做：

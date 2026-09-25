@@ -117,3 +117,88 @@ def test_untriggered_rules_do_not_claim_threshold_met(market):
     for r in evaluate(m, unrealized_pct=0)["rules"]:
         if not r["triggered"]:
             assert "≥" not in r["detail"], f"{r['code']}: {r['detail']}"
+
+
+# ---------- P0 硬性停損 ----------
+def _drifting_down(n=140):
+    """緩跌：剛跌破 20MA，自 60 日高回撤只有 -12%，技術面「還好」。"""
+    close = np.concatenate([np.full(80, 100.0), np.linspace(100, 88, 60)])
+    return pd.DataFrame(
+        {"open": close, "high": close * 1.005, "low": close * 0.995,
+         "close": close, "volume": np.full(len(close), 10_000.0)},
+        index=pd.bdate_range("2025-01-01", periods=len(close)))
+
+
+def test_large_loss_no_longer_reads_the_same_as_break_even():
+    """修正前實測：賠 40% 與不賺不賠給出一模一樣的建議，因為七條規則
+    全是技術面相對位置，沒有一條看得到成本。"""
+    m = compute(_drifting_down(), symbol="X", market="US")
+    flat = evaluate(m, unrealized_pct=0.0)
+    deep = evaluate(m, unrealized_pct=-40.0)
+    assert flat["action"] != deep["action"], "虧損幅度必須影響建議"
+    assert "P0" in deep["triggered"] and "P0" not in flat["triggered"]
+
+
+def test_p0_alone_is_enough_to_demand_exit():
+    """硬性停損的意義是出場，不是減碼 —— 單獨觸發就要到 EXIT_ALL。"""
+    m = compute(_drifting_down(), symbol="US", market="US")
+    out = evaluate(m, unrealized_pct=-40.0)
+    assert out["action"] == "EXIT_ALL"
+
+
+def test_p0_does_not_fire_when_flat_or_profitable():
+    m = compute(_drifting_down(), symbol="X", market="US")
+    for u in (0.0, 5.0, 50.0):
+        assert "P0" not in evaluate(m, unrealized_pct=u)["triggered"]
+
+
+def test_p0_threshold_scales_with_volatility():
+    """低波動股的停損線要比高波動股緊。"""
+    from core import risk
+    calm, wild = dict(), dict()
+    m = compute(_drifting_down(), symbol="X", market="US")
+    calm, wild = dict(m), dict(m)
+    calm["ann_vol"], wild["ann_vol"] = 0.12, 0.60
+
+    loss_calm = risk.max_loss_pct(0.12)
+    loss_wild = risk.max_loss_pct(0.60)
+    assert loss_calm < loss_wild
+
+    # 剛好落在兩者之間的虧損：低波動股該停損，高波動股還不用
+    between = -(loss_calm + loss_wild) / 2
+    assert "P0" in evaluate(calm, unrealized_pct=between)["triggered"]
+    assert "P0" not in evaluate(wild, unrealized_pct=between)["triggered"]
+
+
+def test_p0_explains_where_the_line_came_from():
+    m = compute(_drifting_down(), symbol="X", market="US")
+    out = evaluate(m, unrealized_pct=-40.0)
+    p0 = next(r for r in out["rules"] if r["code"] == "P0")
+    assert "停損線" in p0["detail"] and "年化波動" in p0["detail"]
+    assert any("停損" in n for n in out["structural_notes"])
+
+
+def test_p0_severity_is_config_driven():
+    from config import rules as rules_cfg
+
+    m = compute(_drifting_down(), symbol="X", market="US")
+    cfg = rules_cfg()
+    cfg["stop"]["severity"] = 1                       # 降級成「只是加重」
+    out = evaluate(m, unrealized_pct=-40.0, cfg=cfg)
+    assert "P0" in out["triggered"]
+    assert out["action"] != "EXIT_ALL", "severity 調低後不該還是全數停損"
+
+
+def test_entry_stop_price_is_what_p0_enforces():
+    """端對端一致性：進場端給的停損價換算成虧損%，就是 P0 的觸發線。
+    這正是修正前不成立的地方 —— 進場端說停損 139，出場端從來不檢查。"""
+    from core.recommend import score
+
+    m = compute(_drifting_down(), symbol="X", market="US")
+    s = score(m)
+    implied_loss = (s["close"] - s["stop"]) / s["close"] * 100
+
+    just_inside = -(implied_loss - 0.5)
+    just_outside = -(implied_loss + 0.5)
+    assert "P0" not in evaluate(m, unrealized_pct=just_inside)["triggered"]
+    assert "P0" in evaluate(m, unrealized_pct=just_outside)["triggered"]
