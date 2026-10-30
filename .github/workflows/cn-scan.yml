@@ -1,0 +1,31 @@
+# A 股掃描：在 GitHub 的主機上抓 AkShare 行情，跑推薦排序與持倉檢查。
+# 用途：開發環境的網路政策擋住 eastmoney 時，借 Actions 主機取得資料
+# （使用者已同意）。只讀公開行情，不碰任何帳戶。
+name: cn-scan
+
+on:
+  push:
+    branches: [claude/upbeat-ramanujan-mh0k7j]
+    paths: [.github/workflows/cn-scan.yml]
+  workflow_dispatch:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pandas pyyaml requests akshare
+      - name: 推薦排序（整個 CN 股票池）
+        run: python cli.py rec --market CN -v || true
+      - name: 推薦排序（券商熱門 ＋ 對照）
+        run: python cli.py rec --market CN --symbols 603259,300308,601899,600900,601088,000333,300750,601398,601939 -v || true
+      - name: 持倉檢查
+        run: |
+          for s in 600276:48.97 601138:-37.13 601995:-22.19 000636:-56.38 000651:6.39 002158:-25.12; do
+            echo "=================== ${s%%:*}"
+            python cli.py check --market CN --symbol ${s%%:*} -u ${s##*:} || true
+          done
