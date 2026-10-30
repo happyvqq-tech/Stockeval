@@ -6,7 +6,7 @@ name: cn-scan
 on:
   push:
     branches: [claude/upbeat-ramanujan-mh0k7j]
-    paths: [.github/workflows/cn-scan.yml]
+    paths: [.github/workflows/cn-scan.yml, data/cn.py]
   workflow_dispatch:
 
 jobs:

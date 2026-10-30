@@ -222,3 +222,42 @@ def test_volatility_curve_is_config_driven():
     t = cfg["score"]["thresholds"]
     assert _volatility({"ann_vol": 0.60}, t, 0.5)[0] == pytest.approx(1.0)
     assert _volatility({"ann_vol": 0.26}, t, 0.5)[0] < 0.6
+
+
+def test_cn_falls_back_when_eastmoney_blocked(monkeypatch):
+    """東方財富擋海外 IP 時改用新浪；量能換成跟東方財富相同的「手」。"""
+    import types
+
+    from data.cn import ChinaAdapter
+
+    def em(**kw):
+        raise ConnectionError("push2 限流")
+
+    def sina(symbol, start_date, end_date, adjust):
+        assert symbol == "sh600519" and adjust == "qfq"
+        return pd.DataFrame({"date": [date(2026, 10, 29), date(2026, 10, 30)],
+                             "open": [10.0, 11.0], "high": [11.0, 12.0],
+                             "low": [9.0, 10.0], "close": [10.5, 11.5],
+                             "volume": [12300.0, 45600.0], "amount": [1.0, 2.0]})
+
+    fake = types.SimpleNamespace(stock_zh_a_hist=em, stock_zh_a_daily=sina)
+    monkeypatch.setattr("data.cn._akshare", lambda: fake)
+    df = ChinaAdapter(exclude_st=False)._fetch("600519", date(2026, 10, 1), date(2026, 10, 30))
+    assert list(df["close"]) == [10.5, 11.5]
+    assert list(df["volume"]) == [123.0, 456.0]
+
+
+def test_cn_reports_every_source_when_all_fail(monkeypatch):
+    import types
+
+    from data.cn import ChinaAdapter
+
+    def boom(**kw):
+        raise ConnectionError("blocked")
+
+    fake = types.SimpleNamespace(stock_zh_a_hist=boom, stock_zh_a_daily=boom,
+                                 stock_zh_a_hist_tx=boom)
+    monkeypatch.setattr("data.cn._akshare", lambda: fake)
+    with pytest.raises(RuntimeError) as e:
+        ChinaAdapter(exclude_st=False)._fetch("000651", date(2026, 10, 1), date(2026, 10, 30))
+    assert all(s in str(e.value) for s in ("em", "sina", "tx"))

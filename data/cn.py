@@ -51,6 +51,24 @@ def board_of(symbol: str) -> str:
 LIMIT_PCT = {"MAIN": 0.10, "CHINEXT": 0.20, "STAR": 0.20, "BSE": 0.30}
 
 
+def _exchange_prefix(code: str) -> str:
+    """新浪、騰訊的代碼要帶交易所前綴：滬市 sh、深市 sz、北交所 bj。"""
+    if code.startswith(("6", "9")):
+        return "sh"
+    if code.startswith(("4", "8")):
+        return "bj"
+    return "sz"
+
+
+def _from_alt_source(df: pd.DataFrame) -> pd.DataFrame:
+    """新浪、騰訊的成交量單位是股，換成東方財富的手，同一檔不論來自哪個
+    來源（快取裡可能混著）量能都可以直接比較。"""
+    df = df.rename(columns={"date": "dt"}).set_index("dt")
+    df = df[["open", "high", "low", "close", "volume"]].copy()
+    df["volume"] = df["volume"] / 100
+    return df
+
+
 class ChinaAdapter(MarketAdapter):
     market = "CN"
     settlement = "T+1"
@@ -67,6 +85,18 @@ class ChinaAdapter(MarketAdapter):
         if self.exclude_st and self._is_st(code):
             raise ValueError(f"[CN:{code}] 為 ST / *ST 股，已依設定排除")
 
+        # 東方財富會擋海外機房 IP（雲端主機、GitHub Actions），依序改用
+        # 新浪、騰訊。三個來源都要求前復權，維持「價格必須還原權息」。
+        errors = []
+        for source in (self._fetch_em, self._fetch_sina, self._fetch_tx):
+            try:
+                return source(ak, code, start, end)
+            except Exception as e:
+                errors.append(f"{source.__name__[7:]}: {type(e).__name__}: {e}")
+        raise RuntimeError(f"[CN:{code}] 所有資料來源都失敗 —— " + "；".join(errors))
+
+    @staticmethod
+    def _fetch_em(ak, code: str, start: date, end: date) -> pd.DataFrame:
         df = ak.stock_zh_a_hist(
             symbol=code,
             period="daily",
@@ -88,6 +118,30 @@ class ChinaAdapter(MarketAdapter):
             }
         ).set_index("dt")
         return df[["open", "high", "low", "close", "volume"]]
+
+    @staticmethod
+    def _fetch_sina(ak, code: str, start: date, end: date) -> pd.DataFrame:
+        df = ak.stock_zh_a_daily(
+            symbol=_exchange_prefix(code) + code,
+            start_date=start.strftime("%Y%m%d"),
+            end_date=end.strftime("%Y%m%d"),
+            adjust="qfq",
+        )
+        if df is None or df.empty:
+            return pd.DataFrame()
+        return _from_alt_source(df)
+
+    @staticmethod
+    def _fetch_tx(ak, code: str, start: date, end: date) -> pd.DataFrame:
+        df = ak.stock_zh_a_hist_tx(
+            symbol=_exchange_prefix(code) + code,
+            start_date=start.strftime("%Y%m%d"),
+            end_date=end.strftime("%Y%m%d"),
+            adjust="qfq",
+        )
+        if df is None or df.empty:
+            return pd.DataFrame()
+        return _from_alt_source(df)
 
     # ---------- A 股專屬 ----------
     def _is_st(self, code: str) -> bool:
