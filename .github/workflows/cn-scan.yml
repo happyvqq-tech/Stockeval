@@ -1,4 +1,4 @@
-# A 股掃描：在 GitHub 的主機上抓 AkShare 行情，跑推薦排序與持倉檢查。
+# A 股掃描：在 GitHub 的主機上抓 AkShare 行情，跑推薦排序、持倉檢查與復盤。
 # 用途：開發環境的網路政策擋住 eastmoney 時，借 Actions 主機取得資料
 # （使用者已同意）。只讀公開行情，不碰任何帳戶。
 name: cn-scan
@@ -19,13 +19,30 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install pandas pyyaml requests akshare
-      - name: 推薦排序（整個 CN 股票池）
-        run: python cli.py rec --market CN -v || true
-      - name: 推薦排序（券商熱門 ＋ 對照）
-        run: python cli.py rec --market CN --symbols 603259,300308,601899,600900,601088,000333,300750,601398,601939 -v || true
-      - name: 持倉檢查
+      - name: 復盤：9/1 的推薦 → 10/30
+        run: python cli.py review --market CN --asof 2026-09-01 --until 2026-10-30 || true
+      - name: 復盤：9/30 的推薦 → 10/30
+        run: python cli.py review --market CN --asof 2026-09-30 --until 2026-10-30 || true
+      - name: 候選股 9–10 月走勢
         run: |
-          for s in 600276:48.97 601138:-37.13 601995:-22.19 000636:-56.38 000651:6.39 002158:-25.12; do
-            echo "=================== ${s%%:*}"
-            python cli.py check --market CN --symbol ${s%%:*} -u ${s##*:} || true
-          done
+          python - <<'EOF'
+          from data.base import get_adapter
+          ad = get_adapter("CN")
+          names = {"600887": "伊利股份", "002027": "分众传媒", "601088": "中国神华",
+                   "601398": "工商银行", "601288": "农业银行", "600900": "长江电力",
+                   "000333": "美的集团", "603259": "药明康德"}
+          print(f"{'代號':<8}{'名稱':<8}{'9/1':>9}{'9/30':>9}{'10/30':>9}{'9月%':>8}{'10月%':>8}{'兩月%':>8}{'最大回落%':>10}")
+          for sym, name in names.items():
+              try:
+                  df = ad.ohlcv(sym, "2026-08-25", "2026-10-30")
+                  c = df["close"]
+                  c = c[c.index >= c.index[c.index.astype(str) >= "2026-09-01"][0]]
+                  p0 = c.iloc[0]
+                  p1 = c[c.index.astype(str) <= "2026-09-30"].iloc[-1]
+                  p2 = c.iloc[-1]
+                  dd = (c / c.cummax() - 1).min() * 100
+                  print(f"{sym:<8}{name:<8}{p0:>9.2f}{p1:>9.2f}{p2:>9.2f}"
+                        f"{(p1/p0-1)*100:>8.1f}{(p2/p1-1)*100:>8.1f}{(p2/p0-1)*100:>8.1f}{dd:>10.1f}")
+              except Exception as e:
+                  print(sym, name, "失敗", type(e).__name__, e)
+          EOF
