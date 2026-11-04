@@ -21,8 +21,18 @@ jobs:
       - run: pip install pandas pyyaml requests akshare lxml html5lib
       - name: 雲鋁股份技術面評分與持倉規則
         run: |
-          python cli.py rec --market CN --symbols 000807 -v || true
-          python cli.py check --market CN --symbol 000807 || true
+          # 東方財富在海外主機上會卡住（沒有逾時），這裡直接跳過它的兩個呼叫
+          cat > /tmp/run_cli.py <<'PY'
+          import os, sys; sys.path.insert(0, os.getcwd())
+          import data.cn as cn
+          cn.ChinaAdapter._is_st = lambda self, code: False
+          def _no_em(*a, **k): raise ConnectionError("跳過東方財富")
+          cn.ChinaAdapter._fetch_em = staticmethod(_no_em)
+          import cli
+          sys.exit(cli.main(sys.argv[1:]))
+          PY
+          timeout 300 python /tmp/run_cli.py rec --market CN --symbols 000807,601600,000933 -v || true
+          timeout 300 python /tmp/run_cli.py check --market CN --symbol 000807 || true
       - name: 長期穩健配息股篩選（10–20 年）
         run: |
           python - <<'EOF'
