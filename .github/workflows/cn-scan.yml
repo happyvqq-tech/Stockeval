@@ -1,4 +1,4 @@
-# A 股掃描：在 GitHub 的主機上抓 AkShare 行情，跑推薦排序、持倉檢查與復盤。
+# A 股掃描：在 GitHub 的主機上抓 AkShare 行情做分析。
 # 用途：開發環境的網路政策擋住 eastmoney 時，借 Actions 主機取得資料
 # （使用者已同意）。只讀公開行情，不碰任何帳戶。
 name: cn-scan
@@ -12,37 +12,94 @@ on:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install pandas pyyaml requests akshare
-      - name: 復盤：9/1 的推薦 → 10/30
-        run: python cli.py review --market CN --asof 2026-09-01 --until 2026-10-30 || true
-      - name: 復盤：9/30 的推薦 → 10/30
-        run: python cli.py review --market CN --asof 2026-09-30 --until 2026-10-30 || true
-      - name: 候選股 9–10 月走勢
+      - run: pip install pandas pyyaml requests akshare lxml html5lib
+      - name: 長期穩健配息股篩選（10–20 年）
         run: |
           python - <<'EOF'
+          import re, time
+          import akshare as ak
+          import pandas as pd
           from data.base import get_adapter
+
+          names = {
+              "600900": "长江电力", "600025": "华能水电", "600674": "川投能源", "600886": "国投电力",
+              "601088": "中国神华", "601225": "陕西煤业", "600028": "中国石化", "601006": "大秦铁路",
+              "600377": "宁沪高速", "600012": "皖通高速", "600548": "深高速",
+              "601398": "工商银行", "601288": "农业银行", "601939": "建设银行", "600036": "招商银行",
+              "002142": "宁波银行", "601318": "中国平安",
+              "600887": "伊利股份", "000895": "双汇发展", "603288": "海天味业",
+              "600519": "贵州茅台", "000858": "五粮液", "000568": "泸州老窖",
+              "000333": "美的集团", "000651": "格力电器", "600690": "海尔智家",
+              "600660": "福耀玻璃", "600066": "宇通客车", "600741": "华域汽车", "600104": "上汽集团",
+              "600585": "海螺水泥", "002372": "伟星新材", "600309": "万华化学",
+              "600436": "片仔癀", "000538": "云南白药", "600276": "恒瑞医药", "002415": "海康威视",
+          }
+
+          def money(s):
+              s = str(s).replace(",", "")
+              m = re.match(r"(-?[\d.]+)\s*(亿|万)?", s)
+              if not m: return None
+              v = float(m.group(1))
+              return v * (1e8 if m.group(2) == "亿" else 1e4 if m.group(2) == "万" else 1)
+
+          def pct(s):
+              m = re.match(r"(-?[\d.]+)%", str(s))
+              return float(m.group(1)) if m else None
+
           ad = get_adapter("CN")
-          names = {"600887": "伊利股份", "002027": "分众传媒", "601088": "中国神华",
-                   "601398": "工商银行", "601288": "农业银行", "600900": "长江电力",
-                   "000333": "美的集团", "603259": "药明康德"}
-          print(f"{'代號':<8}{'名稱':<8}{'9/1':>9}{'9/30':>9}{'10/30':>9}{'9月%':>8}{'10月%':>8}{'兩月%':>8}{'最大回落%':>10}")
+          rows = []
           for sym, name in names.items():
+              r = {"代號": sym, "名稱": name}
               try:
-                  df = ad.ohlcv(sym, "2026-08-25", "2026-10-30")
-                  c = df["close"]
-                  c = c[c.index >= c.index[c.index.astype(str) >= "2026-09-01"][0]]
-                  p0 = c.iloc[0]
-                  p1 = c[c.index.astype(str) <= "2026-09-30"].iloc[-1]
-                  p2 = c.iloc[-1]
-                  dd = (c / c.cummax() - 1).min() * 100
-                  print(f"{sym:<8}{name:<8}{p0:>9.2f}{p1:>9.2f}{p2:>9.2f}"
-                        f"{(p1/p0-1)*100:>8.1f}{(p2/p1-1)*100:>8.1f}{(p2/p0-1)*100:>8.1f}{dd:>10.1f}")
+                  c = ad.ohlcv(sym, "2006-01-01", "2026-11-03")["close"]
+                  c.index = pd.to_datetime(c.index)
+                  last = c.iloc[-1]
+                  r["現價"] = round(last, 2)
+                  for yrs in (10, 15):
+                      past = c[c.index <= c.index[-1] - pd.DateOffset(years=yrs)]
+                      r[f"{yrs}年年化%"] = round(((last / past.iloc[-1]) ** (1 / yrs) - 1) * 100, 1) if len(past) else None
+                  c10 = c[c.index >= c.index[-1] - pd.DateOffset(years=10)]
+                  r["10年最大回落%"] = round((c10 / c10.cummax() - 1).min() * 100, 1)
+                  yearly = c10.resample("YE").last().pct_change().dropna()
+                  r["上漲年數"] = f"{int((yearly > 0).sum())}/{len(yearly)}"
               except Exception as e:
-                  print(sym, name, "失敗", type(e).__name__, e)
+                  r["價格錯誤"] = type(e).__name__
+              try:
+                  d = ak.stock_history_dividend_detail(symbol=sym, indicator="分红")
+                  d = d[d["派息"] > 0]
+                  yrs = sorted({x.year for x in d["公告日期"].dropna()}, reverse=True)
+                  run = 0
+                  for i, y in enumerate(yrs):
+                      if y == yrs[0] - i: run += 1
+                      else: break
+                  r["連續配息年"] = run
+                  exd = pd.to_datetime(d["除权除息日"], errors="coerce")
+                  ttm = d[exd >= pd.Timestamp("2026-11-03") - pd.DateOffset(years=1)]["派息"].sum() / 10
+                  r["近12月股息率%"] = round(ttm / r["現價"] * 100, 2) if r.get("現價") else None
+              except Exception as e:
+                  r["配息錯誤"] = type(e).__name__
+              try:
+                  f = ak.stock_financial_abstract_ths(symbol=sym, indicator="按年度")
+                  f = f[f["报告期"].astype(str) >= "2015"].tail(10)
+                  g = [pct(x) for x in f["净利润同比增长率"]]
+                  g = [x for x in g if x is not None]
+                  r["淨利成長年數"] = f"{sum(x > 0 for x in g)}/{len(g)}"
+                  p = [money(x) for x in f["净利润"]]
+                  if p[0] and p[-1] and p[0] > 0 and p[-1] > 0 and len(p) > 1:
+                      r["淨利年化%"] = round(((p[-1] / p[0]) ** (1 / (len(p) - 1)) - 1) * 100, 1)
+                  r["淨利期間"] = f"{f['报告期'].iloc[0]}-{f['报告期'].iloc[-1]}"
+              except Exception as e:
+                  r["財報錯誤"] = type(e).__name__
+              rows.append(r)
+              time.sleep(1)
+
+          df = pd.DataFrame(rows)
+          pd.set_option("display.width", 250); pd.set_option("display.max_columns", 30)
+          print(df.sort_values("10年年化%", ascending=False).to_string(index=False))
           EOF
