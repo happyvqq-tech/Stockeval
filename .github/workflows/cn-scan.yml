@@ -22,7 +22,7 @@ jobs:
       - name: 長期穩健配息股篩選（10–20 年）
         run: |
           python - <<'EOF'
-          import re, time
+          import re, signal, sys, time
           import akshare as ak
           import pandas as pd
           from data.base import get_adapter
@@ -52,12 +52,20 @@ jobs:
               m = re.match(r"(-?[\d.]+)%", str(s))
               return float(m.group(1)) if m else None
 
+          class Slow(Exception): pass
+          def _alarm(*_): raise Slow("逾時")
+          signal.signal(signal.SIGALRM, _alarm)
+          def within(sec, fn, *a, **k):
+              signal.alarm(sec)
+              try: return fn(*a, **k)
+              finally: signal.alarm(0)
+
           ad = get_adapter("CN")
           rows = []
           for sym, name in names.items():
               r = {"代號": sym, "名稱": name}
               try:
-                  c = ad.ohlcv(sym, "2006-01-01", "2026-11-03")["close"]
+                  c = within(40, ad._fetch_sina, ak, sym, pd.Timestamp("2006-01-01").date(), pd.Timestamp("2026-11-03").date())["close"]
                   c.index = pd.to_datetime(c.index)
                   last = c.iloc[-1]
                   r["現價"] = round(last, 2)
@@ -69,9 +77,9 @@ jobs:
                   yearly = c10.resample("YE").last().pct_change().dropna()
                   r["上漲年數"] = f"{int((yearly > 0).sum())}/{len(yearly)}"
               except Exception as e:
-                  r["價格錯誤"] = type(e).__name__
+                  r["價格錯誤"] = f"{type(e).__name__}: {e}"[:80]
               try:
-                  d = ak.stock_history_dividend_detail(symbol=sym, indicator="分红")
+                  d = within(20, ak.stock_history_dividend_detail, symbol=sym, indicator="分红")
                   d = d[d["派息"] > 0]
                   yrs = sorted({x.year for x in d["公告日期"].dropna()}, reverse=True)
                   run = 0
@@ -85,7 +93,7 @@ jobs:
               except Exception as e:
                   r["配息錯誤"] = type(e).__name__
               try:
-                  f = ak.stock_financial_abstract_ths(symbol=sym, indicator="按年度")
+                  f = within(20, ak.stock_financial_abstract_ths, symbol=sym, indicator="按年度")
                   f = f[f["报告期"].astype(str) >= "2015"].tail(10)
                   g = [pct(x) for x in f["净利润同比增长率"]]
                   g = [x for x in g if x is not None]
@@ -97,6 +105,7 @@ jobs:
               except Exception as e:
                   r["財報錯誤"] = type(e).__name__
               rows.append(r)
+              print(r, flush=True)
               time.sleep(1)
 
           df = pd.DataFrame(rows)
