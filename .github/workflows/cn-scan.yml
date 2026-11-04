@@ -19,9 +19,10 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install pandas pyyaml requests akshare lxml html5lib
-      - name: 雲鋁股份技術面評分與持倉規則
+      - name: 技術面掃描：股票池＋擴充名單
         run: |
-          # 東方財富在海外主機上會卡住（沒有逾時），這裡直接跳過它的兩個呼叫
+          # 東方財富在海外主機上會卡住（沒有逾時），這裡直接跳過它的兩個呼叫。
+          # 名單都是大型股、沒有 ST，略過 ST 檢查不影響結果。
           cat > /tmp/run_cli.py <<'PY'
           import os, sys; sys.path.insert(0, os.getcwd())
           import data.cn as cn
@@ -31,86 +32,8 @@ jobs:
           import cli
           sys.exit(cli.main(sys.argv[1:]))
           PY
-          timeout 300 python /tmp/run_cli.py rec --market CN --symbols 000807,601600,000933 -v || true
-          timeout 300 python /tmp/run_cli.py check --market CN --symbol 000807 || true
-      - name: 長期穩健配息股篩選（10–20 年）
-        run: |
-          python - <<'EOF'
-          import re, signal, sys, time
-          import akshare as ak
-          import pandas as pd
-          from data.base import get_adapter
-
-          names = {"000807": "云铝股份", "601600": "中国铝业", "000933": "神火股份"}
-
-          def money(s):
-              s = str(s).replace(",", "")
-              m = re.match(r"(-?[\d.]+)\s*(亿|万)?", s)
-              if not m: return None
-              v = float(m.group(1))
-              return v * (1e8 if m.group(2) == "亿" else 1e4 if m.group(2) == "万" else 1)
-
-          def pct(s):
-              m = re.match(r"(-?[\d.]+)%", str(s))
-              return float(m.group(1)) if m else None
-
-          class Slow(Exception): pass
-          def _alarm(*_): raise Slow("逾時")
-          signal.signal(signal.SIGALRM, _alarm)
-          def within(sec, fn, *a, **k):
-              signal.alarm(sec)
-              try: return fn(*a, **k)
-              finally: signal.alarm(0)
-
-          ad = get_adapter("CN")
-          rows = []
-          for sym, name in names.items():
-              r = {"代號": sym, "名稱": name}
-              try:
-                  c = within(40, ad._fetch_sina, ak, sym, pd.Timestamp("2006-01-01").date(), pd.Timestamp("2026-11-03").date())["close"]
-                  c.index = pd.to_datetime(c.index)
-                  last = c.iloc[-1]
-                  r["現價"] = round(last, 2)
-                  for yrs in (10, 15):
-                      past = c[c.index <= c.index[-1] - pd.DateOffset(years=yrs)]
-                      r[f"{yrs}年年化%"] = round(((last / past.iloc[-1]) ** (1 / yrs) - 1) * 100, 1) if len(past) else None
-                  c10 = c[c.index >= c.index[-1] - pd.DateOffset(years=10)]
-                  r["10年最大回落%"] = round((c10 / c10.cummax() - 1).min() * 100, 1)
-                  yearly = c10.resample("YE").last().pct_change().dropna()
-                  r["上漲年數"] = f"{int((yearly > 0).sum())}/{len(yearly)}"
-              except Exception as e:
-                  r["價格錯誤"] = f"{type(e).__name__}: {e}"[:80]
-              try:
-                  d = within(20, ak.stock_history_dividend_detail, symbol=sym, indicator="分红")
-                  d = d[d["派息"] > 0]
-                  yrs = sorted({x.year for x in d["公告日期"].dropna()}, reverse=True)
-                  run = 0
-                  for i, y in enumerate(yrs):
-                      if y == yrs[0] - i: run += 1
-                      else: break
-                  r["連續配息年"] = run
-                  exd = pd.to_datetime(d["除权除息日"], errors="coerce")
-                  ttm = d[exd >= pd.Timestamp("2026-11-03") - pd.DateOffset(years=1)]["派息"].sum() / 10
-                  r["近12月股息率%"] = round(ttm / r["現價"] * 100, 2) if r.get("現價") else None
-              except Exception as e:
-                  r["配息錯誤"] = type(e).__name__
-              try:
-                  f = within(20, ak.stock_financial_abstract_ths, symbol=sym, indicator="按年度")
-                  f = f[f["报告期"].astype(str) >= "2015"].tail(10)
-                  g = [pct(x) for x in f["净利润同比增长率"]]
-                  g = [x for x in g if x is not None]
-                  r["淨利成長年數"] = f"{sum(x > 0 for x in g)}/{len(g)}"
-                  p = [money(x) for x in f["净利润"]]
-                  if p[0] and p[-1] and p[0] > 0 and p[-1] > 0 and len(p) > 1:
-                      r["淨利年化%"] = round(((p[-1] / p[0]) ** (1 / (len(p) - 1)) - 1) * 100, 1)
-                  r["淨利期間"] = f"{f['报告期'].iloc[0]}-{f['报告期'].iloc[-1]}"
-              except Exception as e:
-                  r["財報錯誤"] = type(e).__name__
-              rows.append(r)
-              print(r, flush=True)
-              time.sleep(1)
-
-          df = pd.DataFrame(rows)
-          pd.set_option("display.width", 250); pd.set_option("display.max_columns", 30)
-          print(df.sort_values("10年年化%", ascending=False).to_string(index=False))
-          EOF
+          timeout 900 python /tmp/run_cli.py rec --market CN -v || true
+          EXTRA=600025,600674,600886,601225,600028,601006,600377,600012,600548,601939,002142,000895,603288,600660,600066,600741,600104,600585,002372,600309,600436,000538
+          EXTRA=$EXTRA,300308,300502,688981,002475,000725,600584,300059,601138,300760,600031,000338,601127,002230
+          EXTRA=$EXTRA,000807,000933,601600,600111,603993,600547,601919,600050,600941,601728,600150
+          timeout 1200 python /tmp/run_cli.py rec --market CN --symbols $EXTRA -v || true
